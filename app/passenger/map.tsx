@@ -17,7 +17,7 @@ import MapView, {
   Region, 
   MapPressEvent, 
   Polyline
-} from 'react-native-maps';
+} from '../../components/MapView';
 import * as Location from 'expo-location';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
