@@ -1,46 +1,40 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAPIClient, User, LoginCredentials, RegisterData, TokenManager, UserDataManager } from '../lib/api';
 
 export type UserRole = 'DRIVER' | 'PASSENGER' | 'ADMIN';
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  phone?: string;
-  avatar?: string;
-  assignedRoute?: string; // For drivers
-  uiMode?: 'SIMPLE' | 'MODERN'; // For passengers
-}
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  authToken: string | null;
+  
+  // Core auth methods
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
+  
+  // Token management
+  refreshToken: () => Promise<void>;
+  isTokenValid: () => boolean;
+  
+  // User management
   updateUser: (userData: Partial<User>) => Promise<void>;
-}
-
-interface RegisterData {
-  email: string;
-  password: string;
-  name: string;
-  role: UserRole;
-  phone?: string;
+  
+  // Role-based access
+  hasPermission: (permission: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const AUTH_STORAGE_KEY = '@auth_user';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  
+  const apiClient = getAPIClient();
 
   useEffect(() => {
     loadStoredUser();
@@ -48,12 +42,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const loadStoredUser = async () => {
     try {
-      const storedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+      setIsLoading(true);
+      
+      // Load user data and token
+      const [storedUser, token] = await Promise.all([
+        UserDataManager.getUserData(),
+        TokenManager.getAuthToken(),
+      ]);
+      
+      if (storedUser && token) {
+        setUser(storedUser);
+        setAuthToken(token);
       }
     } catch (error) {
       console.error('Error loading stored user:', error);
+      // Clear potentially corrupted data
+      await logout();
     } finally {
       setIsLoading(false);
     }
@@ -62,21 +66,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock authentication - replace with actual API call
-      const mockUser: User = {
-        id: '1',
+      const credentials: LoginCredentials = {
         email,
-        name: email.split('@')[0],
-        role: email.includes('admin') ? 'ADMIN' : 
-              email.includes('driver') ? 'DRIVER' : 'PASSENGER',
-        uiMode: 'MODERN', // Default for passengers
+        password,
       };
-
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
-      setUser(mockUser);
+      
+      const authResponse = await apiClient.login(credentials);
+      
+      if (authResponse.success) {
+        setUser(authResponse.user);
+        setAuthToken(authResponse.token);
+      } else {
+        throw new Error(authResponse.message || 'Login failed');
+      }
     } catch (error) {
       console.error('Login error:', error);
-      throw new Error('Invalid credentials');
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -85,20 +90,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const register = async (userData: RegisterData) => {
     setIsLoading(true);
     try {
-      // Mock registration - replace with actual API call
-      const newUser: User = {
-        id: Date.now().toString(),
-        email: userData.email,
-        name: userData.name,
-        role: userData.role,
-        phone: userData.phone,
-      };
-
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
-      setUser(newUser);
+      const authResponse = await apiClient.register(userData);
+      
+      if (authResponse.success) {
+        // For registration, we might need to login separately
+        // since some endpoints don't return tokens immediately
+        if (authResponse.token) {
+          setUser(authResponse.user);
+          setAuthToken(authResponse.token);
+        } else {
+          // Registration successful but need to login
+          console.log('Registration successful:', authResponse.message);
+          // For now, we'll set the user without a token
+          // In a real app, you might want to redirect to login
+          setUser(authResponse.user);
+          setAuthToken('temp_token_' + authResponse.user.id);
+        }
+      } else {
+        throw new Error(authResponse.message || 'Registration failed');
+      }
     } catch (error) {
       console.error('Registration error:', error);
-      throw new Error('Registration failed');
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -106,34 +119,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      await apiClient.logout();
       setUser(null);
+      setAuthToken(null);
     } catch (error) {
       console.error('Logout error:', error);
+      // Even if logout fails, clear local state
+      setUser(null);
+      setAuthToken(null);
     }
   };
 
+  const refreshToken = async () => {
+    try {
+      const tokenResponse = await apiClient.refreshToken();
+      if (tokenResponse.success && tokenResponse.token) {
+        setAuthToken(tokenResponse.token);
+      } else {
+        throw new Error('Token refresh failed');
+      }
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      // If refresh fails, logout user
+      await logout();
+      throw error;
+    }
+  };
+
+  const isTokenValid = (): boolean => {
+    if (!authToken) return false;
+    
+    // Basic token format validation
+    const parts = authToken.split('.');
+    return parts.length === 3;
+  };
+
   const updateUser = async (userData: Partial<User>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('No user logged in');
+    }
 
     try {
+      // Update user data locally first for immediate UI feedback
       const updatedUser = { ...user, ...userData };
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
       setUser(updatedUser);
+      
+      // Update in storage
+      await UserDataManager.updateUserData(userData);
+      
+      // If this is a profile update that needs backend sync,
+      // you might want to call the API here as well
+      // await apiClient.updateUser(user.id, userData);
+      
     } catch (error) {
       console.error('Update user error:', error);
-      throw new Error('Failed to update user');
+      // Revert local changes on error
+      setUser(user);
+      throw error;
+    }
+  };
+
+  const hasPermission = (permission: string): boolean => {
+    if (!user) return false;
+    
+    // Basic role-based permissions
+    switch (permission) {
+      case 'admin':
+        return user.role === 'ADMIN';
+      case 'driver':
+        return user.role === 'DRIVER' || user.role === 'ADMIN';
+      case 'passenger':
+        return user.role === 'PASSENGER' || user.role === 'ADMIN';
+      default:
+        return false;
     }
   };
 
   const value: AuthContextType = {
     user,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!authToken,
+    authToken,
     login,
     register,
     logout,
+    refreshToken,
+    isTokenValid,
     updateUser,
+    hasPermission,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

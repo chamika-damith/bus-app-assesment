@@ -4,9 +4,7 @@ import superjson from 'superjson';
 
 // Define a basic router type for now
 // Replace this with your actual backend router type when available
-type AppRouter = {
-  // Add your router procedures here
-};
+type AppRouter = any; // Temporary fix for TypeScript
 
 export const trpc = createTRPCReact<AppRouter>();
 

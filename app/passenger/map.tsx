@@ -107,7 +107,7 @@ export default function MapScreen() {
   const [isLoadingBuses, setIsLoadingBuses] = useState(false);
 
   // API configuration
-  const API_BASE_URL = 'http://your-server.com/api'; // Replace with your server URL
+  const API_BASE_URL = 'http://192.168.204.176:5000/api'; // Replace with your server URL
 
   // Default region (Colombo, Sri Lanka)
   const defaultRegion: Region = {

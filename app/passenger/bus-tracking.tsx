@@ -6,11 +6,15 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Bell, BellOff, Users, MapPin, Clock } from 'lucide-react-native';
+import { ArrowLeft, Bell, BellOff, Users, MapPin, Clock, RefreshCw } from 'lucide-react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,21 +30,10 @@ interface BusInfo {
     latitude: number;
     longitude: number;
   };
+  lastUpdate?: string;
+  driverName?: string;
+  speed?: number;
 }
-
-const mockBusInfo: BusInfo = {
-  id: '1',
-  routeNumber: '129',
-  routeName: 'Ratnapura - Colombo',
-  arrivalTime: '8 min',
-  isLive: true,
-  crowdLevel: 'medium',
-  distanceToUser: 2.5,
-  currentLocation: {
-    latitude: 6.9271,
-    longitude: 79.8612,
-  },
-};
 
 export default function BusTracking() {
   const params = useLocalSearchParams();
@@ -48,21 +41,107 @@ export default function BusTracking() {
   const routeId = params.routeId as string;
   
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [busInfo, setBusInfo] = useState<BusInfo>(mockBusInfo);
+  const [busInfo, setBusInfo] = useState<BusInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [isOffRoute, setIsOffRoute] = useState(false);
 
-  useEffect(() => {
-    // Simulate live updates
-    const interval = setInterval(() => {
-      setBusInfo(prev => ({
-        ...prev,
-        arrivalTime: Math.max(1, parseInt(prev.arrivalTime) - 1) + ' min',
-        distanceToUser: Math.max(0.1, prev.distanceToUser - 0.1),
-      }));
-    }, 10000); // Update every 10 seconds
+  const apiClient = getAPIClient();
 
+  useEffect(() => {
+    loadBusInfo();
+    
+    // Set up auto-refresh every 30 seconds
+    const interval = setInterval(loadBusInfo, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [busId]);
+
+  const loadBusInfo = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      console.log('Loading bus info for:', busId);
+
+      if (busId) {
+        // Get specific bus location
+        const busLocation = await apiClient.getBusLocation(busId);
+        
+        setBusInfo({
+          id: busLocation.busId,
+          routeNumber: busLocation.routeId,
+          routeName: `Route ${busLocation.routeId}`,
+          arrivalTime: busLocation.estimatedArrival || 'Calculating...',
+          isLive: busLocation.isActive,
+          crowdLevel: 'medium', // Default value - could be enhanced
+          distanceToUser: 0, // Would need user location to calculate
+          currentLocation: {
+            latitude: busLocation.location.latitude,
+            longitude: busLocation.location.longitude,
+          },
+          lastUpdate: busLocation.lastUpdate,
+          speed: busLocation.location.speed,
+        });
+      } else {
+        // Get live buses and pick the first one as demo
+        const liveBuses = await apiClient.getLiveBuses();
+        
+        if (liveBuses.length > 0) {
+          const firstBus = liveBuses[0];
+          setBusInfo({
+            id: firstBus.busId,
+            routeNumber: firstBus.routeId,
+            routeName: `Route ${firstBus.routeId}`,
+            arrivalTime: firstBus.estimatedArrival || 'Calculating...',
+            isLive: firstBus.isActive,
+            crowdLevel: 'medium',
+            distanceToUser: 0,
+            currentLocation: {
+              latitude: firstBus.location.latitude,
+              longitude: firstBus.location.longitude,
+            },
+            lastUpdate: firstBus.lastUpdate,
+            speed: firstBus.location.speed,
+          });
+        } else {
+          throw new Error('No active buses found');
+        }
+      }
+
+    } catch (err) {
+      console.error('Error loading bus info:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load bus information';
+      setError(errorMessage);
+      
+      // Fallback to demo data
+      setBusInfo({
+        id: 'demo',
+        routeNumber: '⚠️ Demo',
+        routeName: 'Backend Connection Failed',
+        arrivalTime: 'N/A',
+        isLive: false,
+        crowdLevel: 'low',
+        distanceToUser: 0,
+        currentLocation: {
+          latitude: 6.9271,
+          longitude: 79.8612,
+        },
+        lastUpdate: 'Error loading data',
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    loadBusInfo(true);
+  };
 
   const getCrowdLevelColor = (level: string) => {
     switch (level) {
@@ -90,6 +169,57 @@ export default function BusTracking() {
     router.push(`/passenger/off-route-guidance?busId=${busId}`);
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Bus Tracking</Text>
+          <TouchableOpacity 
+            style={styles.notificationButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw 
+              size={24} 
+              color={refreshing ? Colors.gray[400] : Colors.primary}
+              style={refreshing ? { transform: [{ rotate: '180deg' }] } : {}}
+            />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading bus information...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!busInfo) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Bus Tracking</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Bus not found</Text>
+          <Button title="Go Back" onPress={() => router.back()} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -103,29 +233,52 @@ export default function BusTracking() {
         <Text style={styles.headerTitle}>Bus Tracking</Text>
         <TouchableOpacity 
           style={styles.notificationButton}
-          onPress={() => setNotificationsEnabled(!notificationsEnabled)}
+          onPress={onRefresh}
+          disabled={refreshing}
         >
-          {notificationsEnabled ? (
-            <Bell size={24} color={Colors.primary} />
-          ) : (
-            <BellOff size={24} color={Colors.gray[400]} />
-          )}
+          <RefreshCw 
+            size={24} 
+            color={refreshing ? Colors.gray[400] : Colors.primary}
+            style={refreshing ? { transform: [{ rotate: '180deg' }] } : {}}
+          />
         </TouchableOpacity>
       </View>
 
       {/* Map Area */}
       <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <MapPin size={48} color={Colors.primary} />
-          <Text style={styles.mapText}>Live Bus Location</Text>
-          <Text style={styles.mapSubtext}>Bus {busInfo.routeNumber} - {busInfo.routeName}</Text>
-          
-          {/* Live indicator */}
+        <MapView
+          style={styles.map}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: busInfo?.currentLocation.latitude || 6.9271,
+            longitude: busInfo?.currentLocation.longitude || 79.8612,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
+          followsUserLocation={false}
+        >
+          {busInfo && (
+            <Marker
+              coordinate={{
+                latitude: busInfo.currentLocation.latitude,
+                longitude: busInfo.currentLocation.longitude,
+              }}
+              title={`Bus ${busInfo.routeNumber}`}
+              description={`${busInfo.routeName} - ${busInfo.isLive ? 'Live' : 'Predicted'}`}
+              pinColor={busInfo.isLive ? Colors.primary : Colors.gray[400]}
+            />
+          )}
+        </MapView>
+        
+        {/* Live indicator overlay */}
+        {busInfo?.isLive && (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
           </View>
-        </View>
+        )}
       </View>
 
       {/* Bus Info Bottom Sheet */}
@@ -249,24 +402,10 @@ const styles = StyleSheet.create({
   mapContainer: {
     flex: 1,
     backgroundColor: Colors.light,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.light,
     position: 'relative',
   },
-  mapText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginTop: 16,
-  },
-  mapSubtext: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginTop: 4,
+  map: {
+    flex: 1,
   },
   liveIndicator: {
     position: 'absolute',
@@ -430,5 +569,29 @@ const styles = StyleSheet.create({
   notificationSubtext: {
     fontSize: 12,
     color: Colors.text.secondary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    color: Colors.danger,
+    textAlign: 'center',
+    marginBottom: 20,
   },
 });

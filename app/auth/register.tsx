@@ -16,9 +16,9 @@ import { useAuth, UserRole } from '../../context/AuthContext';
 import { Colors } from '../../constants/colors';
 
 const ROLES = [
-  { label: 'Passenger', value: 'passenger' as UserRole },
-  { label: 'Driver', value: 'driver' as UserRole },
-  { label: 'Admin', value: 'admin' as UserRole },
+  { label: 'Passenger', value: 'PASSENGER' as UserRole },
+  { label: 'Driver', value: 'DRIVER' as UserRole },
+  { label: 'Admin', value: 'ADMIN' as UserRole },
 ];
 
 export default function Register() {
@@ -28,7 +28,7 @@ export default function Register() {
     password: '',
     confirmPassword: '',
     phone: '',
-    role: 'passenger' as UserRole,
+    role: 'PASSENGER' as UserRole,
   });
   const [loading, setLoading] = useState(false);
   const [showRolePicker, setShowRolePicker] = useState(false);

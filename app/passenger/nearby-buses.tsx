@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ArrowLeft, MapPin, List, Filter, RefreshCw, Users } from 'lucide-react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
 interface NearbyBus {
   id: string;
@@ -25,59 +28,71 @@ interface NearbyBus {
   };
 }
 
-const mockNearbyBuses: NearbyBus[] = [
-  {
-    id: '1',
-    routeNumber: '119',
-    direction: 'To Pettah',
-    distanceFromUser: 0.3,
-    crowdLevel: 'low',
-    arrivalTime: '2 min',
-    location: { latitude: 6.9271, longitude: 79.8612 }
-  },
-  {
-    id: '2',
-    routeNumber: '129',
-    direction: 'To Ratnapura',
-    distanceFromUser: 0.5,
-    crowdLevel: 'medium',
-    arrivalTime: '5 min',
-    location: { latitude: 6.9281, longitude: 79.8622 }
-  },
-  {
-    id: '3',
-    routeNumber: '138',
-    direction: 'To Nugegoda',
-    distanceFromUser: 0.8,
-    crowdLevel: 'high',
-    arrivalTime: '8 min',
-    location: { latitude: 6.9291, longitude: 79.8632 }
-  },
-  {
-    id: '4',
-    routeNumber: '280',
-    direction: 'To Horana',
-    distanceFromUser: 1.2,
-    crowdLevel: 'low',
-    arrivalTime: '12 min',
-    location: { latitude: 6.9301, longitude: 79.8642 }
-  },
-  {
-    id: '5',
-    routeNumber: '177',
-    direction: 'To Maharagama',
-    distanceFromUser: 1.5,
-    crowdLevel: 'medium',
-    arrivalTime: '15 min',
-    location: { latitude: 6.9311, longitude: 79.8652 }
-  }
-];
-
 export default function NearbyBuses() {
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [buses, setBuses] = useState<NearbyBus[]>(mockNearbyBuses);
+  const [buses, setBuses] = useState<NearbyBus[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const apiClient = getAPIClient();
+
+  useEffect(() => {
+    loadNearbyBuses();
+  }, []);
+
+  const loadNearbyBuses = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      console.log('Loading nearby buses from backend...');
+      const liveBuses = await apiClient.getLiveBuses();
+      
+      // Transform backend bus data to match our interface
+      const nearbyBuses: NearbyBus[] = liveBuses.map((bus, index) => ({
+        id: bus.busId,
+        routeNumber: bus.routeId,
+        direction: `Route ${bus.routeId}`,
+        distanceFromUser: Math.random() * 2, // Mock distance - would need user location to calculate
+        crowdLevel: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as 'low' | 'medium' | 'high',
+        arrivalTime: `${Math.floor(Math.random() * 20) + 1} min`,
+        location: {
+          latitude: bus.location.latitude,
+          longitude: bus.location.longitude,
+        },
+      }));
+
+      setBuses(nearbyBuses);
+      console.log('Loaded nearby buses:', nearbyBuses.length);
+      
+    } catch (err) {
+      console.error('Error loading nearby buses:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load nearby buses';
+      setError(errorMessage);
+      
+      // Fallback to demo data
+      setBuses([
+        {
+          id: 'demo',
+          routeNumber: '⚠️ Demo',
+          direction: 'Backend Connection Failed',
+          distanceFromUser: 0,
+          crowdLevel: 'low',
+          arrivalTime: 'N/A',
+          location: { latitude: 6.9271, longitude: 79.8612 }
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   const getCrowdLevelColor = (level: string) => {
     switch (level) {
@@ -98,11 +113,7 @@ export default function NearbyBuses() {
   };
 
   const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 1000);
+    loadNearbyBuses(true);
   };
 
   const handleBusPress = (bus: NearbyBus) => {
@@ -115,6 +126,37 @@ export default function NearbyBuses() {
   });
 
   const sortedBuses = filteredBuses.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Nearby Buses</Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw 
+              size={24} 
+              color={isRefreshing ? Colors.gray[400] : Colors.primary}
+              style={isRefreshing ? { transform: [{ rotate: '180deg' }] } : {}}
+            />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading nearby buses...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const renderBusCard = ({ item }: { item: NearbyBus }) => (
     <TouchableOpacity 
@@ -197,17 +239,36 @@ export default function NearbyBuses() {
       {/* Content */}
       {viewMode === 'map' ? (
         <View style={styles.mapContainer}>
-          <View style={styles.mapPlaceholder}>
-            <MapPin size={48} color={Colors.primary} />
-            <Text style={styles.mapText}>Nearby Buses Map</Text>
-            <Text style={styles.mapSubtext}>
-              Showing {sortedBuses.length} buses within 2km
-            </Text>
-            
-            {/* Map overlay with bus count */}
-            <View style={styles.mapOverlay}>
-              <Text style={styles.busCountText}>{sortedBuses.length} buses nearby</Text>
-            </View>
+          <MapView
+            style={styles.map}
+            provider={PROVIDER_GOOGLE}
+            initialRegion={{
+              latitude: 6.9271, // Colombo center
+              longitude: 79.8612,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            }}
+            showsUserLocation={true}
+            showsMyLocationButton={true}
+          >
+            {sortedBuses.map((bus) => (
+              <Marker
+                key={bus.id}
+                coordinate={{
+                  latitude: bus.location.latitude,
+                  longitude: bus.location.longitude,
+                }}
+                title={`Bus ${bus.routeNumber}`}
+                description={`${bus.direction} - ${bus.arrivalTime}`}
+                pinColor={Colors.primary}
+                onPress={() => handleBusPress(bus)}
+              />
+            ))}
+          </MapView>
+          
+          {/* Map overlay with bus count */}
+          <View style={styles.mapOverlay}>
+            <Text style={styles.busCountText}>{sortedBuses.length} buses nearby</Text>
           </View>
           
           {/* Bottom sheet with bus list */}
@@ -324,24 +385,10 @@ const styles = StyleSheet.create({
   },
   mapContainer: {
     flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.light,
     position: 'relative',
   },
-  mapText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginTop: 16,
-  },
-  mapSubtext: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginTop: 4,
+  map: {
+    flex: 1,
   },
   mapOverlay: {
     position: 'absolute',
@@ -471,5 +518,17 @@ const styles = StyleSheet.create({
   crowdText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
   },
 });

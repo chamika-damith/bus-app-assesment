@@ -83,12 +83,7 @@ export default function Login() {
           </Text>
         </View>
 
-        <View style={styles.demoCredentials}>
-          <Text style={styles.demoTitle}>Demo Credentials:</Text>
-          <Text style={styles.demoText}>Admin: admin@demo.com / password</Text>
-          <Text style={styles.demoText}>Driver: driver@demo.com / password</Text>
-          <Text style={styles.demoText}>Passenger: passenger@demo.com / password</Text>
-        </View>
+        
       </ScrollView>
     </SafeAreaView>
   );

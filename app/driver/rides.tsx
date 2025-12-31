@@ -216,6 +216,10 @@ export default function DriverRides() {
                     title="Start Trip"
                     size="small"
                     style={styles.statusButton}
+                    onPress={() => {
+                      // TODO: Implement start trip functionality
+                      console.log('Start trip for ride:', ride.id);
+                    }}
                   />
                 </View>
               )}

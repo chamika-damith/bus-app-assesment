@@ -9,6 +9,7 @@ import {
   Alert,
   RefreshControl,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { 
@@ -27,6 +28,7 @@ import {
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
 interface Driver {
   driverId: string;
@@ -40,12 +42,12 @@ interface Driver {
   hasCurrentLocation: boolean;
 }
 
-const API_BASE_URL = 'http://your-server.com/api'; // Replace with your server URL
-
 export default function DriversManagement() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [newDriver, setNewDriver] = useState({
     name: '',
     phone: '',
@@ -54,27 +56,67 @@ export default function DriversManagement() {
     routeId: '',
   });
 
+  const apiClient = getAPIClient();
+
   useEffect(() => {
     fetchDrivers();
   }, []);
 
-  const fetchDrivers = async () => {
+  const fetchDrivers = async (isRefresh = false) => {
     try {
-      setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/admin/drivers`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setDrivers(data.drivers);
+      if (isRefresh) {
+        setRefreshing(true);
       } else {
-        Alert.alert('Error', 'Failed to fetch drivers');
+        setIsLoading(true);
       }
+      setError(null);
+
+      console.log('Fetching drivers from backend...');
+      const backendDrivers = await apiClient.getDrivers();
+      
+      // Transform backend driver data to match our interface
+      const transformedDrivers: Driver[] = backendDrivers.map(driver => ({
+        driverId: driver.id || driver.driverId,
+        name: driver.name,
+        phone: driver.phone,
+        licenseNumber: driver.licenseNumber,
+        busId: driver.busId,
+        routeId: driver.routeId,
+        isActive: driver.isActive,
+        lastSeen: driver.lastSeen,
+        hasCurrentLocation: !!driver.location,
+      }));
+
+      setDrivers(transformedDrivers);
+      console.log('Loaded drivers:', transformedDrivers.length);
+      
     } catch (error) {
       console.error('Failed to fetch drivers:', error);
-      Alert.alert('Connection Error', 'Unable to connect to server');
+      const errorMessage = error instanceof Error ? error.message : 'Unable to connect to server';
+      setError(errorMessage);
+      
+      // Show demo data with error indicator
+      setDrivers([
+        {
+          driverId: 'demo1',
+          name: '⚠️ Backend Connection Failed',
+          phone: 'Check server status',
+          licenseNumber: 'N/A',
+          busId: 'N/A',
+          routeId: 'N/A',
+          isActive: false,
+          lastSeen: Date.now(),
+          hasCurrentLocation: false,
+        }
+      ]);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    fetchDrivers(true);
   };
 
   const addDriver = async () => {
@@ -85,25 +127,23 @@ export default function DriversManagement() {
         return;
       }
 
-      const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setIsLoading(true);
       
-      const response = await fetch(`${API_BASE_URL}/driver/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newDriver,
-          deviceId,
-        }),
-      });
-
-      const data = await response.json();
+      const driverRegistration = {
+        name: newDriver.name,
+        phone: newDriver.phone,
+        licenseNumber: newDriver.licenseNumber,
+        busId: newDriver.busId,
+        routeId: newDriver.routeId,
+        deviceId: `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      };
       
-      if (data.success) {
+      const response = await apiClient.registerDriver(driverRegistration);
+      
+      if (response.success) {
         Alert.alert(
           'Driver Added',
-          `Driver registered successfully!\n\nDriver ID: ${data.driverId}\nDevice ID: ${deviceId}\n\nShare these details with the driver.`,
+          `Driver registered successfully!\n\nDriver ID: ${response.data?.driverId}\nDevice ID: ${driverRegistration.deviceId}\n\nShare these details with the driver.`,
           [{ text: 'OK', onPress: () => {
             setShowAddModal(false);
             setNewDriver({ name: '', phone: '', licenseNumber: '', busId: '', routeId: '' });
@@ -111,11 +151,14 @@ export default function DriversManagement() {
           }}]
         );
       } else {
-        Alert.alert('Error', data.error || 'Failed to add driver');
+        Alert.alert('Error', response.message || 'Failed to add driver');
       }
     } catch (error) {
       console.error('Failed to add driver:', error);
-      Alert.alert('Error', 'Failed to add driver');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add driver';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -130,21 +173,13 @@ export default function DriversManagement() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_BASE_URL}/admin/driver/${driverId}`, {
-                method: 'DELETE',
-              });
-
-              const data = await response.json();
-              
-              if (data.success) {
-                Alert.alert('Success', 'Driver removed successfully');
-                fetchDrivers();
-              } else {
-                Alert.alert('Error', data.error || 'Failed to remove driver');
-              }
+              await apiClient.removeDriver(driverId);
+              Alert.alert('Success', 'Driver removed successfully');
+              fetchDrivers();
             } catch (error) {
               console.error('Failed to remove driver:', error);
-              Alert.alert('Error', 'Failed to remove driver');
+              const errorMessage = error instanceof Error ? error.message : 'Failed to remove driver';
+              Alert.alert('Error', errorMessage);
             }
           }
         }
