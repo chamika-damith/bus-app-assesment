@@ -131,21 +131,4 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
   },
-  demoCredentials: {
-    backgroundColor: Colors.background.secondary,
-    padding: 16,
-    borderRadius: 8,
-    marginTop: 'auto',
-  },
-  demoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 8,
-  },
-  demoText: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginBottom: 4,
-  },
 });

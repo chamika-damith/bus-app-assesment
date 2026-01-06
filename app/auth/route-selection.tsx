@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,54 +14,44 @@ import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
-// Mock route data
-const mockRoutes = [
-  {
-    id: '1',
-    number: '138',
-    name: 'Colombo - Kandy',
-    stops_count: 45,
-    distance: '115 km',
-    operating_hours: '5:00 AM - 10:00 PM',
-    description: 'Main highway route connecting Colombo to Kandy'
-  },
-  {
-    id: '2',
-    number: '177',
-    name: 'Colombo - Galle',
-    stops_count: 38,
-    distance: '95 km',
-    operating_hours: '5:30 AM - 9:30 PM',
-    description: 'Coastal route via Southern Expressway'
-  },
-  {
-    id: '3',
-    number: '245',
-    name: 'Colombo - Negombo',
-    stops_count: 28,
-    distance: '42 km',
-    operating_hours: '5:00 AM - 11:00 PM',
-    description: 'Airport route via Negombo'
-  },
-  {
-    id: '4',
-    number: '122',
-    name: 'Colombo - Ratnapura',
-    stops_count: 52,
-    distance: '98 km',
-    operating_hours: '5:15 AM - 9:45 PM',
-    description: 'Hill country route to Ratnapura'
-  },
-];
+interface Route {
+  id: string;
+  number: string;
+  name: string;
+  stops_count: number;
+  distance: string;
+  operating_hours: string;
+  description: string;
+}
 
 export default function RouteSelection() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(true);
   const { updateUser } = useAuth();
 
-  const filteredRoutes = mockRoutes.filter(route =>
+  useEffect(() => {
+    loadRoutes();
+  }, []);
+
+  const loadRoutes = async () => {
+    try {
+      setLoadingRoutes(true);
+      // Load routes from backend
+      // For now, show empty state
+      setRoutes([]);
+    } catch (error) {
+      console.error('Failed to load routes:', error);
+    } finally {
+      setLoadingRoutes(false);
+    }
+  };
+
+  const filteredRoutes = routes.filter(route =>
     route.number.toLowerCase().includes(searchQuery.toLowerCase()) ||
     route.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -72,7 +62,7 @@ export default function RouteSelection() {
       return;
     }
 
-    const route = mockRoutes.find(r => r.id === selectedRoute);
+    const route = routes.find(r => r.id === selectedRoute);
     if (!route) return;
 
     setLoading(true);
@@ -98,7 +88,7 @@ export default function RouteSelection() {
     }
   };
 
-  const selectedRouteData = mockRoutes.find(r => r.id === selectedRoute);
+  const selectedRouteData = routes.find(r => r.id === selectedRoute);
 
   return (
     <SafeAreaView style={styles.container}>

@@ -118,7 +118,7 @@ export class HTTPClient {
    */
   private async handleResponseError(error: any): Promise<never> {
     // Log network errors for debugging
-    if (__DEV__) {
+    if (process.env.NODE_ENV === 'development') {
       console.error('API Request Error:', error);
     }
 

@@ -8,6 +8,8 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -22,11 +24,17 @@ import {
   Pause, 
   Settings,
   User,
-  Bus
+  Bus,
+  Battery,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Database
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import { gpsService, GPSServiceStatus } from '../../lib/services/gps-service';
 
 interface LocationData {
   latitude: number;
@@ -44,17 +52,24 @@ interface DriverSession {
   startTime: number;
 }
 
-const GPS_UPDATE_INTERVAL = 5000; // 5 seconds
-const API_BASE_URL = 'http://your-server.com/api'; // Replace with your server URL
+const API_BASE_URL = 'http://192.168.204.176:5001/api/gps'; // Updated to match backend API
 
 export default function GPSTracker() {
   const { user } = useAuth();
   const [isTracking, setIsTracking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
-  const [isOnline, setIsOnline] = useState(false);
   const [session, setSession] = useState<DriverSession | null>(null);
   const [locationPermission, setLocationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<GPSServiceStatus>({
+    isTracking: false,
+    isOnline: false,
+    lastUpdate: null,
+    queuedUpdates: 0,
+    batteryOptimized: false,
+    accuracy: 0,
+    connectionStatus: 'disconnected',
+  });
   const [stats, setStats] = useState({
     totalDistance: 0,
     averageSpeed: 0,
@@ -62,18 +77,66 @@ export default function GPSTracker() {
     lastUpdate: null as Date | null,
   });
 
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-  const trackingInterval = useRef<NodeJS.Timeout | null>(null);
+  const statusUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeTracker();
+    
+    // Handle app state changes for background tracking
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        // App came to foreground, update status
+        updateGPSStatus();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
     return () => {
-      stopTracking();
+      cleanup();
+      subscription?.remove();
     };
   }, []);
 
+  // Update GPS status periodically
+  useEffect(() => {
+    if (isTracking) {
+      statusUpdateInterval.current = setInterval(() => {
+        updateGPSStatus();
+      }, 2000); // Update every 2 seconds
+    } else {
+      if (statusUpdateInterval.current) {
+        clearInterval(statusUpdateInterval.current);
+        statusUpdateInterval.current = null;
+      }
+    }
+
+    return () => {
+      if (statusUpdateInterval.current) {
+        clearInterval(statusUpdateInterval.current);
+      }
+    };
+  }, [isTracking]);
+
+  const updateGPSStatus = () => {
+    const status = gpsService.getStatus();
+    setGpsStatus(status);
+    
+    // Update current location from GPS service if available
+    if (status.lastUpdate && status.accuracy > 0) {
+      // The GPS service doesn't expose current location directly,
+      // but we can infer it's working from the status
+      setStats(prev => ({
+        ...prev,
+        lastUpdate: status.lastUpdate,
+      }));
+    }
+  };
+
   const initializeTracker = async () => {
     try {
+      setIsLoading(true);
+      
       // Request location permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -91,8 +154,17 @@ export default function GPSTracker() {
       if (savedSession) {
         const parsedSession = JSON.parse(savedSession);
         setSession(parsedSession);
+        
+        // Initialize GPS service with session data
+        await gpsService.initialize({
+          driverId: parsedSession.driverId,
+          busId: parsedSession.busId,
+          routeId: parsedSession.routeId,
+          deviceId: await getDeviceId(),
+        });
+        
         if (parsedSession.isTracking) {
-          startTracking();
+          await startTracking();
         }
       } else {
         // Need to authenticate driver
@@ -100,6 +172,9 @@ export default function GPSTracker() {
       }
     } catch (error) {
       console.error('Failed to initialize tracker:', error);
+      Alert.alert('Initialization Error', 'Failed to initialize GPS tracker. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -107,43 +182,120 @@ export default function GPSTracker() {
     try {
       setIsLoading(true);
       
-      // Get device ID
-      const deviceId = await getDeviceId();
-      
-      // For demo, use user phone or generate one
-      const phone = user?.phone || '+94771234567';
-      
-      const response = await fetch(`${API_BASE_URL}/driver/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone,
-          deviceId,
-        }),
-      });
+      // Use email-only authentication via API client
+      const email = user?.email;
+      if (!email) {
+        Alert.alert('Authentication Failed', 'No email found for user. Please contact support.');
+        return;
+      }
 
-      const data = await response.json();
+      // In a real app, the password would come from:
+      // 1. Secure storage (if previously saved)
+      // 2. User input (login form)
+      // 3. Biometric authentication
+      // TODO: Implement secure password management
       
-      if (data.success) {
-        const newSession: DriverSession = {
-          driverId: data.driver.driverId,
-          busId: data.driver.busId,
-          routeId: data.driver.routeId,
-          isTracking: false,
-          startTime: Date.now(),
-        };
+      const apiClient = getAPIClient();
+      
+      try {
+        const authResponse = await apiClient.login({
+          email,
+          password: 'mypassword123', // This should come from secure storage or user input
+        });
+
+        if (authResponse.success && authResponse.user) {
+          const newSession: DriverSession = {
+            driverId: authResponse.user.driverId || authResponse.user.id,
+            busId: authResponse.user.busId || 'BUS-001',
+            routeId: authResponse.user.routeId || 'Route-001',
+            isTracking: false,
+            startTime: Date.now(),
+          };
+          
+          // Also save session data for driver dashboard
+          const dashboardSession = {
+            driverId: newSession.driverId,
+            sessionId: authResponse.sessionId || 'temp_session',
+            busId: newSession.busId,
+            routeId: newSession.routeId,
+            isOnline: true,
+          };
+          
+          setSession(newSession);
+          await AsyncStorage.setItem('@driver_session', JSON.stringify(dashboardSession));
+          
+          // Initialize GPS service with session data (deviceId is generated automatically)
+          const deviceId = await getDeviceId();
+          await gpsService.initialize({
+            driverId: newSession.driverId,
+            busId: newSession.busId,
+            routeId: newSession.routeId,
+            deviceId,
+          });
+          
+          updateGPSStatus();
+          
+          Alert.alert('Success', 'Authentication successful! GPS tracking is now active.');
+        } else {
+          Alert.alert('Authentication Failed', 'Login succeeded but no user data received.');
+        }
+      } catch (apiError) {
+        console.error('API Client login error:', apiError);
         
-        setSession(newSession);
-        await AsyncStorage.setItem('@driver_session', JSON.stringify(newSession));
-        setIsOnline(true);
-      } else {
-        Alert.alert('Authentication Failed', data.error || 'Please contact admin to register your device.');
+        // If API client fails, try direct backend call as fallback
+        console.log('Trying direct backend call as fallback...');
+        
+        const response = await fetch(`${API_BASE_URL}/driver/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            password: 'mypassword123',
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          const newSession: DriverSession = {
+            driverId: data.data.driverId,
+            busId: data.data.busId,
+            routeId: data.data.routeId,
+            isTracking: false,
+            startTime: Date.now(),
+          };
+          
+          const dashboardSession = {
+            driverId: data.data.driverId,
+            sessionId: data.data.sessionId,
+            busId: data.data.busId,
+            routeId: data.data.routeId,
+            isOnline: data.data.isActive || false,
+          };
+          
+          setSession(newSession);
+          await AsyncStorage.setItem('@driver_session', JSON.stringify(dashboardSession));
+          
+          const deviceId = await getDeviceId();
+          await gpsService.initialize({
+            driverId: newSession.driverId,
+            busId: newSession.busId,
+            routeId: newSession.routeId,
+            deviceId,
+          });
+          
+          updateGPSStatus();
+          
+          Alert.alert('Success', 'Authentication successful via direct backend call!');
+        } else {
+          Alert.alert('Authentication Failed', data.error || 'Both API client and direct backend calls failed.');
+        }
       }
     } catch (error) {
       console.error('Authentication error:', error);
-      Alert.alert('Connection Error', 'Unable to connect to server. Please check your internet connection.');
+      Alert.alert('Connection Error', 'Unable to connect to server. Please check your internet connection and ensure the backend server is running.');
     } finally {
       setIsLoading(false);
     }
@@ -169,38 +321,26 @@ export default function GPSTracker() {
     try {
       setIsLoading(true);
       
-      // Start location tracking
-      locationSubscription.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: GPS_UPDATE_INTERVAL,
-          distanceInterval: 10, // Update every 10 meters
-        },
-        (location) => {
-          const locationData: LocationData = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            heading: location.coords.heading || 0,
-            speed: (location.coords.speed || 0) * 3.6, // Convert m/s to km/h
-            accuracy: location.coords.accuracy || 0,
-          };
-          
-          setCurrentLocation(locationData);
-          sendLocationUpdate(locationData);
-          updateStats(locationData);
-        }
-      );
-
+      // Start GPS service tracking
+      await gpsService.startTracking();
+      
       // Update session
       const updatedSession = { ...session, isTracking: true };
       setSession(updatedSession);
       await AsyncStorage.setItem('@driver_session', JSON.stringify(updatedSession));
       
       setIsTracking(true);
-      setIsOnline(true);
+      updateGPSStatus();
+      
+      Alert.alert(
+        'GPS Tracking Started',
+        'Your location is now being broadcast to passengers. The app will continue tracking in the background.',
+        [{ text: 'OK' }]
+      );
+      
     } catch (error) {
       console.error('Failed to start tracking:', error);
-      Alert.alert('Tracking Error', 'Failed to start GPS tracking.');
+      Alert.alert('Tracking Error', 'Failed to start GPS tracking. Please check your permissions and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -208,16 +348,10 @@ export default function GPSTracker() {
 
   const stopTracking = async () => {
     try {
-      // Stop location tracking
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-        locationSubscription.current = null;
-      }
-
-      if (trackingInterval.current) {
-        clearInterval(trackingInterval.current);
-        trackingInterval.current = null;
-      }
+      setIsLoading(true);
+      
+      // Stop GPS service tracking
+      await gpsService.stopTracking();
 
       // Update session
       if (session) {
@@ -227,49 +361,26 @@ export default function GPSTracker() {
       }
 
       setIsTracking(false);
-      setIsOnline(false);
+      updateGPSStatus();
+      
     } catch (error) {
       console.error('Failed to stop tracking:', error);
+      Alert.alert('Error', 'Failed to stop GPS tracking.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const sendLocationUpdate = async (locationData: LocationData) => {
-    if (!session) return;
-
+  const cleanup = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/driver/location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          driverId: session.driverId,
-          busId: session.busId,
-          routeId: session.routeId,
-          ...locationData,
-          status: isTracking ? 'active' : 'idle',
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setIsOnline(true);
-        setStats(prev => ({ ...prev, lastUpdate: new Date() }));
-      } else {
-        setIsOnline(false);
+      await gpsService.cleanup();
+      if (statusUpdateInterval.current) {
+        clearInterval(statusUpdateInterval.current);
+        statusUpdateInterval.current = null;
       }
     } catch (error) {
-      console.error('Failed to send location update:', error);
-      setIsOnline(false);
+      console.error('Cleanup error:', error);
     }
-  };
-
-  const updateStats = (locationData: LocationData) => {
-    setStats(prev => ({
-      ...prev,
-      averageSpeed: locationData.speed,
-      trackingTime: Date.now() - (session?.startTime || Date.now()),
-    }));
   };
 
   const handleTrackingToggle = () => {
@@ -280,10 +391,41 @@ export default function GPSTracker() {
     }
   };
 
+  const handleForceSync = async () => {
+    try {
+      setIsLoading(true);
+      await gpsService.forceSync();
+      updateGPSStatus();
+      Alert.alert('Sync Complete', 'Queued location updates have been synchronized.');
+    } catch (error) {
+      Alert.alert('Sync Failed', 'Failed to synchronize queued updates. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatTime = (milliseconds: number): string => {
     const hours = Math.floor(milliseconds / 3600000);
     const minutes = Math.floor((milliseconds % 3600000) / 60000);
     return `${hours}h ${minutes}m`;
+  };
+
+  const getConnectionStatusColor = (status: string): string => {
+    switch (status) {
+      case 'connected': return Colors.success;
+      case 'reconnecting': return Colors.warning;
+      case 'disconnected': return Colors.danger;
+      default: return Colors.gray[400];
+    }
+  };
+
+  const getConnectionStatusIcon = (status: string) => {
+    switch (status) {
+      case 'connected': return <Wifi size={20} color={Colors.success} />;
+      case 'reconnecting': return <Clock size={20} color={Colors.warning} />;
+      case 'disconnected': return <WifiOff size={20} color={Colors.danger} />;
+      default: return <WifiOff size={20} color={Colors.gray[400]} />;
+    }
   };
 
   if (isLoading) {
@@ -304,7 +446,7 @@ export default function GPSTracker() {
           <User size={48} color={Colors.gray[400]} />
           <Text style={styles.errorTitle}>Authentication Required</Text>
           <Text style={styles.errorText}>
-            Please contact admin to register your device for GPS tracking.
+            Please ensure your email is registered as a driver to enable GPS tracking.
           </Text>
           <Button
             title="Retry Authentication"
@@ -327,16 +469,15 @@ export default function GPSTracker() {
           </View>
         </View>
         <View style={styles.connectionStatus}>
-          {isOnline ? (
-            <Wifi size={20} color={Colors.success} />
-          ) : (
-            <WifiOff size={20} color={Colors.danger} />
+          {getConnectionStatusIcon(gpsStatus.connectionStatus)}
+          {gpsStatus.batteryOptimized && (
+            <Battery size={16} color={Colors.warning} style={{ marginLeft: 4 }} />
           )}
         </View>
       </View>
 
       <View style={styles.content}>
-        {/* Tracking Status */}
+        {/* Enhanced Tracking Status */}
         <View style={styles.statusCard}>
           <View style={styles.statusHeader}>
             <Text style={styles.statusTitle}>GPS Tracking</Text>
@@ -345,44 +486,87 @@ export default function GPSTracker() {
               onValueChange={handleTrackingToggle}
               trackColor={{ false: Colors.gray[300], true: Colors.primary }}
               thumbColor={Colors.white}
+              disabled={isLoading}
             />
           </View>
           <Text style={styles.statusText}>
             {isTracking ? 'Broadcasting your location to passengers' : 'Tracking is paused'}
           </Text>
+          
+          {/* Connection Status Details */}
+          <View style={styles.statusDetails}>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Status:</Text>
+              <Text style={[styles.statusValue, { color: getConnectionStatusColor(gpsStatus.connectionStatus) }]}>
+                {gpsStatus.connectionStatus.charAt(0).toUpperCase() + gpsStatus.connectionStatus.slice(1)}
+              </Text>
+            </View>
+            
+            {gpsStatus.accuracy > 0 && (
+              <View style={styles.statusItem}>
+                <Text style={styles.statusLabel}>Accuracy:</Text>
+                <Text style={[
+                  styles.statusValue, 
+                  { color: gpsStatus.accuracy <= 50 ? Colors.success : Colors.warning }
+                ]}>
+                  ±{gpsStatus.accuracy.toFixed(0)}m
+                </Text>
+              </View>
+            )}
+            
+            {gpsStatus.queuedUpdates > 0 && (
+              <View style={styles.statusItem}>
+                <Text style={styles.statusLabel}>Queued:</Text>
+                <Text style={[styles.statusValue, { color: Colors.warning }]}>
+                  {gpsStatus.queuedUpdates} updates
+                </Text>
+              </View>
+            )}
+            
+            {gpsStatus.batteryOptimized && (
+              <View style={styles.statusItem}>
+                <Battery size={14} color={Colors.warning} />
+                <Text style={[styles.statusValue, { color: Colors.warning, marginLeft: 4 }]}>
+                  Battery optimized
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
-        {/* Current Location */}
-        {currentLocation && (
+        {/* GPS Service Status */}
+        {gpsStatus.accuracy > 0 && (
           <View style={styles.locationCard}>
             <View style={styles.locationHeader}>
               <MapPin size={20} color={Colors.primary} />
-              <Text style={styles.locationTitle}>Current Location</Text>
+              <Text style={styles.locationTitle}>GPS Status</Text>
             </View>
             <View style={styles.locationDetails}>
               <Text style={styles.locationText}>
-                Lat: {currentLocation.latitude.toFixed(6)}
+                Accuracy: ±{gpsStatus.accuracy.toFixed(0)}m
+                {gpsStatus.accuracy > 50 && ' (Poor signal)'}
               </Text>
               <Text style={styles.locationText}>
-                Lng: {currentLocation.longitude.toFixed(6)}
+                Last Update: {gpsStatus.lastUpdate ? gpsStatus.lastUpdate.toLocaleTimeString() : 'Never'}
               </Text>
-              <Text style={styles.locationText}>
-                Speed: {currentLocation.speed.toFixed(1)} km/h
-              </Text>
-              <Text style={styles.locationText}>
-                Accuracy: ±{currentLocation.accuracy.toFixed(0)}m
-              </Text>
+              {gpsStatus.queuedUpdates > 0 && (
+                <Text style={[styles.locationText, { color: Colors.warning }]}>
+                  Queued Updates: {gpsStatus.queuedUpdates}
+                </Text>
+              )}
             </View>
           </View>
         )}
 
-        {/* Statistics */}
+        {/* Enhanced Statistics */}
         <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>Today's Statistics</Text>
+          <Text style={styles.statsTitle}>Session Statistics</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.averageSpeed.toFixed(1)}</Text>
-              <Text style={styles.statLabel}>km/h avg</Text>
+              <Text style={styles.statValue}>
+                {gpsStatus.connectionStatus === 'connected' ? '✓' : '✗'}
+              </Text>
+              <Text style={styles.statLabel}>connection</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{formatTime(stats.trackingTime)}</Text>
@@ -390,21 +574,23 @@ export default function GPSTracker() {
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {stats.lastUpdate ? stats.lastUpdate.toLocaleTimeString() : '--:--'}
+                {gpsStatus.lastUpdate ? gpsStatus.lastUpdate.toLocaleTimeString() : '--:--'}
               </Text>
               <Text style={styles.statLabel}>last update</Text>
             </View>
           </View>
         </View>
 
-        {/* Control Buttons */}
+        {/* Enhanced Control Buttons */}
         <View style={styles.controls}>
           <TouchableOpacity
             style={[styles.controlButton, isTracking && styles.activeButton]}
             onPress={handleTrackingToggle}
             disabled={isLoading}
           >
-            {isTracking ? (
+            {isLoading ? (
+              <ActivityIndicator size={24} color={isTracking ? Colors.white : Colors.primary} />
+            ) : isTracking ? (
               <Pause size={24} color={Colors.white} />
             ) : (
               <Play size={24} color={Colors.primary} />
@@ -413,6 +599,20 @@ export default function GPSTracker() {
               {isTracking ? 'Stop Tracking' : 'Start Tracking'}
             </Text>
           </TouchableOpacity>
+
+          {/* Sync Button - only show when there are queued updates */}
+          {gpsStatus.queuedUpdates > 0 && (
+            <TouchableOpacity
+              style={styles.syncButton}
+              onPress={handleForceSync}
+              disabled={isLoading}
+            >
+              <Database size={20} color={Colors.warning} />
+              <Text style={styles.syncButtonText}>
+                Sync {gpsStatus.queuedUpdates} Updates
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.settingsButton}
@@ -628,5 +828,40 @@ const styles = StyleSheet.create({
   settingsButtonText: {
     fontSize: 14,
     color: Colors.text.secondary,
+  },
+  // New styles for enhanced GPS tracking
+  statusDetails: {
+    marginTop: 12,
+    gap: 8,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  statusValue: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  syncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: Colors.warning,
+    gap: 8,
+  },
+  syncButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.warning,
   },
 });

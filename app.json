@@ -48,7 +48,17 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow TransLink to track your location for real-time bus tracking and route guidance.",
-          "isAndroidBackgroundLocationEnabled": true
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-task-manager"
+      ],
+      [
+        "expo-background-fetch",
+        {
+          "backgroundFetchIntervalSeconds": 30
         }
       ],
       "expo-secure-store"

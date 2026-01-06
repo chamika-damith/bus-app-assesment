@@ -10,7 +10,7 @@ import {
   Animated,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { MapPin, Layers, ZoomIn, ZoomOut, Navigation, LocateIcon, Bus } from 'lucide-react-native';
+import { MapPin, Layers, ZoomIn, ZoomOut, Navigation, LocateIcon, Bus, Wifi, WifiOff } from 'lucide-react-native';
 import MapView, { 
   Marker, 
   PROVIDER_GOOGLE, 
@@ -21,6 +21,7 @@ import MapView, {
 import * as Location from 'expo-location';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import websocketService, { LocationUpdate, DriverStatusUpdate, ConnectionStatus } from '../../lib/services/websocket-service';
 
 const { width, height } = Dimensions.get('window');
 
@@ -48,6 +49,10 @@ interface LiveBus {
   routeId: string;
   nextStop: string;
   eta: string;
+  lastUpdate: string;
+  driverId?: string;
+  accuracy?: number;
+  isOnline?: boolean;
 }
 
 interface PinnedLocation {
@@ -55,7 +60,7 @@ interface PinnedLocation {
   longitude: number;
 }
 
-// Mock bus routes with polyline coordinates
+// Bus routes with polyline coordinates
 const busRoutes: BusRoute[] = [
   {
     id: 'route_138',
@@ -105,9 +110,11 @@ export default function MapScreen() {
   const [showRoutes, setShowRoutes] = useState<boolean>(true);
   const [liveBuses, setLiveBuses] = useState<LiveBus[]>([]);
   const [isLoadingBuses, setIsLoadingBuses] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
 
   // API configuration
-  const API_BASE_URL = 'http://192.168.204.176:5000/api'; // Replace with your server URL
+  const API_BASE_URL = 'http://192.168.204.176:5001/api'; // Replace with your server URL
 
   // Default region (Colombo, Sri Lanka)
   const defaultRegion: Region = {
@@ -123,31 +130,50 @@ export default function MapScreen() {
   const fetchLiveBuses = async () => {
     try {
       setIsLoadingBuses(true);
-      const response = await fetch(`${API_BASE_URL}/buses/live`);
+      const response = await fetch(`${API_BASE_URL}/gps/buses/live`);
       const data = await response.json();
       
-      if (data.success && data.buses) {
-        const buses: LiveBus[] = data.buses.map((bus: any) => ({
-          id: bus.busId,
-          route: bus.busId.split('_')[1] || 'Unknown', // Extract route from busId
-          direction: getRouteDirection(bus.routeId),
-          title: `Bus ${bus.busId.split('_')[1]} to ${getRouteDirection(bus.routeId)}`,
-          latitude: bus.latitude,
-          longitude: bus.longitude,
-          speed: bus.speed || 0,
-          heading: bus.heading || 0,
-          status: bus.status || 'active',
-          routeId: bus.routeId,
-          nextStop: getNextStop(bus.routeId),
-          eta: calculateETA(bus.latitude, bus.longitude, bus.speed),
-        }));
+      if (data.success && data.data) {
+        const buses: LiveBus[] = data.data.map((busData: any) => {
+          // Handle both legacy and new data formats
+          const busId = busData.busId || busData.id;
+          const routeNumber = busId ? busId.split('_')[1] || 'Unknown' : 'Unknown';
+          const isOnline = busData.isOnline !== undefined ? busData.isOnline : 
+                          (busData.lastSeen ? (Date.now() - busData.lastSeen) < 120000 : true);
+          
+          return {
+            id: busId,
+            route: routeNumber,
+            direction: getRouteDirection(busData.routeId),
+            title: `Bus ${routeNumber} to ${getRouteDirection(busData.routeId)}`,
+            latitude: busData.latitude || busData.location?.latitude || 0,
+            longitude: busData.longitude || busData.location?.longitude || 0,
+            speed: busData.speed || busData.location?.speed || 0,
+            heading: busData.heading || busData.location?.heading || 0,
+            status: busData.status || (isOnline ? 'active' : 'offline'),
+            routeId: busData.routeId,
+            nextStop: getNextStop(busData.routeId),
+            eta: calculateETA(
+              busData.latitude || busData.location?.latitude || 0, 
+              busData.longitude || busData.location?.longitude || 0, 
+              busData.speed || busData.location?.speed || 0
+            ),
+            lastUpdate: busData.lastUpdate || busData.lastSeen || new Date().toISOString(),
+            driverId: busData.driverId,
+            accuracy: busData.accuracy || busData.location?.accuracy,
+            isOnline: isOnline,
+          };
+        });
         
         setLiveBuses(buses);
+      } else {
+        // If API call succeeds but no data, show empty state
+        setLiveBuses([]);
       }
     } catch (error) {
       console.error('Failed to fetch live buses:', error);
-      // Fallback to mock data if API fails
-      initializeMockBuses();
+      // Show error state - no fallback data
+      setLiveBuses([]);
     } finally {
       setIsLoadingBuses(false);
     }
@@ -197,65 +223,190 @@ export default function MapScreen() {
     return R * c;
   };
 
-  // Initialize mock buses as fallback
-  const initializeMockBuses = () => {
-    const mockBuses: LiveBus[] = [
-      {
-        id: 'bus_138_01',
-        route: '138',
-        direction: 'Kandy',
-        title: 'Bus 138 to Kandy',
-        latitude: 6.9271,
-        longitude: 79.8612,
-        speed: 35,
-        heading: 45,
-        status: 'active',
-        routeId: 'route_138',
-        nextStop: 'Pettah Central',
-        eta: '5 min'
-      },
-      {
-        id: 'bus_177_01',
-        route: '177',
-        direction: 'Galle',
-        title: 'Bus 177 to Galle',
-        latitude: 6.9344,
-        longitude: 79.8428,
-        speed: 28,
-        heading: 180,
-        status: 'active',
-        routeId: 'route_177',
-        nextStop: 'Mount Lavinia',
-        eta: '8 min'
-      },
-      {
-        id: 'bus_245_01',
-        route: '245',
-        direction: 'Negombo',
-        title: 'Bus 245 to Negombo',
-        latitude: 6.9147,
-        longitude: 79.8730,
-        speed: 42,
-        heading: 315,
-        status: 'active',
-        routeId: 'route_245',
-        nextStop: 'Kelaniya',
-        eta: '12 min'
-      }
-    ];
-    
-    setLiveBuses(mockBuses);
-  };
 
-  // Initialize and fetch live buses
+
+  // Initialize WebSocket connection and event listeners
   useEffect(() => {
-    fetchLiveBuses();
+    let unsubscribeFunctions: (() => void)[] = [];
+
+    const initializeWebSocket = async () => {
+      try {
+        // Set up event listeners
+        const unsubscribeLocationUpdate = websocketService.onLocationUpdate((update: LocationUpdate) => {
+          handleLocationUpdate(update);
+        });
+
+        const unsubscribeStatusUpdate = websocketService.onStatusUpdate((update: DriverStatusUpdate) => {
+          handleDriverStatusUpdate(update);
+        });
+
+        const unsubscribeConnectionStatus = websocketService.onConnectionStatusChange((status: ConnectionStatus) => {
+          setConnectionStatus(status);
+          console.log('WebSocket connection status:', status);
+        });
+
+        const unsubscribeInitialLocations = websocketService.onInitialLocations((locations: LocationUpdate[]) => {
+          handleInitialLocations(locations);
+        });
+
+        const unsubscribeError = websocketService.onError((error: string) => {
+          console.error('WebSocket error:', error);
+          // Fallback to API polling on WebSocket errors
+          if (!isPinMode) {
+            fetchLiveBuses();
+          }
+        });
+
+        unsubscribeFunctions = [
+          unsubscribeLocationUpdate,
+          unsubscribeStatusUpdate,
+          unsubscribeConnectionStatus,
+          unsubscribeInitialLocations,
+          unsubscribeError
+        ];
+
+        // Connect to WebSocket server
+        await websocketService.connect();
+        
+        // Subscribe to map area updates
+        if (!isPinMode) {
+          subscribeToMapArea();
+        }
+
+      } catch (error) {
+        console.error('Failed to initialize WebSocket:', error);
+        // Fallback to API polling
+        fetchLiveBuses();
+      }
+    };
+
+    initializeWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
+      websocketService.disconnect();
+    };
   }, []);
 
-  // Auto-refresh live bus data
+  // Subscribe to map area when region changes (for real-time updates)
+  useEffect(() => {
+    if (!isPinMode && websocketService.isConnected()) {
+      subscribeToMapArea();
+    }
+  }, [region, isPinMode]);
+
+  // Handle real-time location updates (requirement 4.3)
+  const handleLocationUpdate = (update: LocationUpdate) => {
+    setLastUpdateTime(new Date());
+    
+    setLiveBuses(prevBuses => {
+      const updatedBuses = [...prevBuses];
+      const existingIndex = updatedBuses.findIndex(bus => bus.id === update.busId);
+      
+      if (existingIndex >= 0) {
+        // Update existing bus
+        const existingBus = updatedBuses[existingIndex];
+        updatedBuses[existingIndex] = {
+          ...existingBus,
+          latitude: update.latitude,
+          longitude: update.longitude,
+          speed: update.speed,
+          heading: update.heading,
+          status: update.status,
+          lastUpdate: update.timestamp,
+          accuracy: update.accuracy,
+          isOnline: update.status !== 'offline',
+          eta: calculateETA(update.latitude, update.longitude, update.speed)
+        };
+      } else {
+        // Add new bus
+        const newBus: LiveBus = {
+          id: update.busId,
+          route: update.busId.split('_')[1] || 'Unknown',
+          direction: getRouteDirection(update.routeId),
+          title: `Bus ${update.busId.split('_')[1] || 'Unknown'} to ${getRouteDirection(update.routeId)}`,
+          latitude: update.latitude,
+          longitude: update.longitude,
+          speed: update.speed,
+          heading: update.heading,
+          status: update.status,
+          routeId: update.routeId,
+          nextStop: getNextStop(update.routeId),
+          eta: calculateETA(update.latitude, update.longitude, update.speed),
+          lastUpdate: update.timestamp,
+          driverId: update.driverId,
+          accuracy: update.accuracy,
+          isOnline: update.status !== 'offline'
+        };
+        updatedBuses.push(newBus);
+      }
+      
+      return updatedBuses;
+    });
+  };
+
+  // Handle driver status updates
+  const handleDriverStatusUpdate = (update: DriverStatusUpdate) => {
+    setLiveBuses(prevBuses => {
+      return prevBuses.map(bus => {
+        if (bus.id === update.busId) {
+          return {
+            ...bus,
+            status: update.status,
+            isOnline: update.status !== 'offline',
+            lastUpdate: update.timestamp
+          };
+        }
+        return bus;
+      });
+    });
+  };
+
+  // Handle initial locations from WebSocket
+  const handleInitialLocations = (locations: LocationUpdate[]) => {
+    const buses: LiveBus[] = locations.map(location => ({
+      id: location.busId,
+      route: location.busId.split('_')[1] || 'Unknown',
+      direction: getRouteDirection(location.routeId),
+      title: `Bus ${location.busId.split('_')[1] || 'Unknown'} to ${getRouteDirection(location.routeId)}`,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      speed: location.speed,
+      heading: location.heading,
+      status: location.status,
+      routeId: location.routeId,
+      nextStop: getNextStop(location.routeId),
+      eta: calculateETA(location.latitude, location.longitude, location.speed),
+      lastUpdate: location.timestamp,
+      driverId: location.driverId,
+      accuracy: location.accuracy,
+      isOnline: location.status !== 'offline'
+    }));
+    
+    setLiveBuses(buses);
+    setLastUpdateTime(new Date());
+  };
+
+  // Subscribe to map area for location updates
+  const subscribeToMapArea = () => {
+    if (websocketService.isConnected()) {
+      const bounds = {
+        north: region.latitude + region.latitudeDelta / 2,
+        south: region.latitude - region.latitudeDelta / 2,
+        east: region.longitude + region.longitudeDelta / 2,
+        west: region.longitude - region.longitudeDelta / 2
+      };
+      
+      const areaId = `area_${Math.round(region.latitude * 1000)}_${Math.round(region.longitude * 1000)}`;
+      websocketService.subscribeToArea(areaId, bounds);
+    }
+  };
+
+  // Auto-refresh live bus data (fallback when WebSocket is not connected)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!isPinMode) {
+      if (!isPinMode && !websocketService.isConnected()) {
         fetchLiveBuses();
       }
     }, 10000); // Update every 10 seconds
@@ -322,9 +473,9 @@ export default function MapScreen() {
 
   const handlePinDestination = () => {
     if (pinnedLocation) {
-      // Mock address lookup - in real app, use reverse geocoding
-      const mockAddress = `Location at ${pinnedLocation.latitude.toFixed(4)}, ${pinnedLocation.longitude.toFixed(4)}`;
-      router.push(`/passenger/routes-buses?destination=${encodeURIComponent(mockAddress)}`);
+      // TODO: Use reverse geocoding API for real address lookup
+      const locationAddress = `Location at ${pinnedLocation.latitude.toFixed(4)}, ${pinnedLocation.longitude.toFixed(4)}`;
+      router.push(`/passenger/routes-buses?destination=${encodeURIComponent(locationAddress)}`);
     } else {
       Alert.alert('No Location Selected', 'Please tap on the map to select a destination');
     }
@@ -369,15 +520,27 @@ export default function MapScreen() {
   };
 
   const handleBusMarkerPress = (bus: LiveBus) => {
-    // Show bus info and navigate to tracking
+    // Enhanced bus info display with comprehensive information (Requirement 4.2, 4.4)
+    const lastUpdateTime = bus.lastUpdate ? new Date(bus.lastUpdate).toLocaleTimeString() : 'Unknown';
+    const accuracyText = bus.accuracy ? `±${bus.accuracy}m` : 'Unknown';
+    const onlineStatus = bus.isOnline !== false ? 'Online' : 'Offline';
+    
+    let statusMessage = '';
+    if (bus.status === 'offline' || bus.isOnline === false) {
+      statusMessage = `Status: Offline\nLast seen: ${lastUpdateTime}`;
+    } else {
+      statusMessage = `Status: ${onlineStatus}\nSpeed: ${bus.speed.toFixed(0)} km/h\nAccuracy: ${accuracyText}\nLast update: ${lastUpdateTime}`;
+    }
+
     Alert.alert(
-      `Bus ${bus.route}`,
-      `Direction: ${bus.direction}\nNext Stop: ${bus.nextStop}\nETA: ${bus.eta}\nSpeed: ${bus.speed.toFixed(0)} km/h`,
+      `Bus ${bus.route} - ${bus.direction}`,
+      `${statusMessage}\nNext Stop: ${bus.nextStop}\nETA: ${bus.eta}`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Track Bus', 
-          onPress: () => router.push(`/passenger/bus-tracking?busId=${bus.id}`)
+          onPress: () => router.push(`/passenger/bus-tracking?busId=${bus.id}&routeId=${bus.routeId}`),
+          style: bus.status === 'offline' || bus.isOnline === false ? 'default' : 'default'
         }
       ]
     );
@@ -387,29 +550,66 @@ export default function MapScreen() {
     setShowRoutes(!showRoutes);
   };
 
-  const getBusStatusColor = (status: string) => {
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected': return 'Live Updates';
+      case 'connecting': return 'Connecting...';
+      case 'reconnecting': return 'Reconnecting...';
+      case 'disconnected': return 'Offline Mode';
+      case 'error': return 'Connection Error';
+      default: return 'Unknown Status';
+    }
+  };
+
+  const getBusStatusColor = (status: string, isOnline?: boolean) => {
+    // Handle offline bus display scenarios (Requirement 4.5)
+    if (status === 'offline' || isOnline === false) {
+      return Colors.bus.offline;
+    }
+    
     switch (status) {
-      case 'active': return Colors.success;
-      case 'idle': return Colors.warning;
-      case 'offline': return Colors.gray[400];
+      case 'active': return Colors.bus.active;
+      case 'idle': return Colors.bus.idle;
       default: return Colors.primary;
     }
   };
 
   const renderBusIcon = (bus: LiveBus) => {
+    const isOffline = bus.status === 'offline' || bus.isOnline === false;
+    const statusColor = getBusStatusColor(bus.status, bus.isOnline);
+    
     return (
       <View style={[styles.busIconContainer, { 
-        transform: [{ rotate: `${bus.heading}deg` }] 
+        transform: [{ rotate: `${bus.heading}deg` }],
+        opacity: isOffline ? 0.6 : 1.0 // Visual indication for offline buses
       }]}>
         <View style={[styles.busIcon, { 
-          backgroundColor: getBusStatusColor(bus.status),
-          borderColor: Colors.white 
+          backgroundColor: statusColor,
+          borderColor: Colors.white,
+          borderWidth: isOffline ? 1 : 2 // Thinner border for offline buses
         }]}>
           <Bus size={16} color={Colors.white} />
+          {isOffline && (
+            <View style={styles.offlineIndicator}>
+              <Text style={styles.offlineText}>!</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.busRouteLabel}>
-          <Text style={styles.busRouteLabelText}>{bus.route}</Text>
+        <View style={[styles.busRouteLabel, {
+          backgroundColor: isOffline ? Colors.gray[200] : Colors.white,
+          borderColor: isOffline ? Colors.gray[400] : Colors.border
+        }]}>
+          <Text style={[styles.busRouteLabelText, {
+            color: isOffline ? Colors.text.secondary : Colors.text.primary
+          }]}>
+            {bus.route}
+          </Text>
         </View>
+        {isOffline && (
+          <View style={styles.offlineLabel}>
+            <Text style={styles.offlineLabelText}>OFFLINE</Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -466,22 +666,26 @@ export default function MapScreen() {
         )}
 
         {/* Live Bus Markers (only in browse mode) */}
-        {!isPinMode && liveBuses.map((bus) => (
-          <Marker
-            key={bus.id}
-            coordinate={{
-              latitude: bus.latitude,
-              longitude: bus.longitude,
-            }}
-            title={bus.title}
-            description={`${bus.direction} • Next: ${bus.nextStop} • ETA: ${bus.eta}`}
-            onPress={() => handleBusMarkerPress(bus)}
-            anchor={{ x: 0.5, y: 0.5 }}
-            flat={true}
-          >
-            {renderBusIcon(bus)}
-          </Marker>
-        ))}
+        {!isPinMode && liveBuses.map((bus) => {
+          const isOffline = bus.status === 'offline' || bus.isOnline === false;
+          return (
+            <Marker
+              key={bus.id}
+              coordinate={{
+                latitude: bus.latitude,
+                longitude: bus.longitude,
+              }}
+              title={bus.title}
+              description={`${bus.direction} • Next: ${bus.nextStop} • ETA: ${bus.eta} • Status: ${isOffline ? 'Offline' : 'Online'}`}
+              onPress={() => handleBusMarkerPress(bus)}
+              anchor={{ x: 0.5, y: 0.5 }}
+              flat={true}
+              opacity={isOffline ? 0.7 : 1.0} // Reduced opacity for offline buses
+            >
+              {renderBusIcon(bus)}
+            </Marker>
+          );
+        })}
       </MapView>
 
       {/* Map Controls */}
@@ -501,6 +705,27 @@ export default function MapScreen() {
             onPress={toggleRouteDisplay}
           >
             <Navigation size={20} color={showRoutes ? Colors.white : Colors.primary} />
+          </TouchableOpacity>
+        )}
+
+        {/* Connection Status Indicator */}
+        {!isPinMode && (
+          <TouchableOpacity 
+            style={[
+              styles.controlButton, 
+              connectionStatus === 'connected' ? styles.connectedButton : styles.disconnectedButton
+            ]}
+            onPress={() => {
+              if (connectionStatus !== 'connected') {
+                websocketService.connect().catch(console.error);
+              }
+            }}
+          >
+            {connectionStatus === 'connected' ? (
+              <Wifi size={20} color={Colors.white} />
+            ) : (
+              <WifiOff size={20} color={Colors.white} />
+            )}
           </TouchableOpacity>
         )}
         
@@ -581,21 +806,35 @@ export default function MapScreen() {
           <View style={styles.browseInfoCard}>
             <View style={styles.busStatsRow}>
               <View style={styles.busStatItem}>
-                <View style={[styles.statusDot, { backgroundColor: Colors.success }]} />
+                <View style={[styles.statusDot, { backgroundColor: Colors.bus.active }]} />
                 <Text style={styles.busStatText}>
-                  {liveBuses.filter(b => b.status === 'active').length} Active
+                  {liveBuses.filter(b => b.status === 'active' && b.isOnline !== false).length} Active
                 </Text>
               </View>
               <View style={styles.busStatItem}>
-                <View style={[styles.statusDot, { backgroundColor: Colors.warning }]} />
+                <View style={[styles.statusDot, { backgroundColor: Colors.bus.idle }]} />
                 <Text style={styles.busStatText}>
-                  {liveBuses.filter(b => b.status === 'idle').length} Idle
+                  {liveBuses.filter(b => b.status === 'idle' && b.isOnline !== false).length} Idle
+                </Text>
+              </View>
+              <View style={styles.busStatItem}>
+                <View style={[styles.statusDot, { backgroundColor: Colors.bus.offline }]} />
+                <Text style={styles.busStatText}>
+                  {liveBuses.filter(b => b.status === 'offline' || b.isOnline === false).length} Offline
                 </Text>
               </View>
             </View>
             <Text style={styles.browseInfoSubtitle}>
-              Tap on a bus to track it • Routes: {showRoutes ? 'Shown' : 'Hidden'}
+              Tap on a bus to track it • Routes: {showRoutes ? 'Shown' : 'Hidden'} • {getConnectionStatusText()}
             </Text>
+            {isLoadingBuses && (
+              <Text style={styles.loadingText}>Updating bus locations...</Text>
+            )}
+            {lastUpdateTime && (
+              <Text style={styles.loadingText}>
+                Last update: {lastUpdateTime.toLocaleTimeString()}
+              </Text>
+            )}
           </View>
         </View>
       )}
@@ -636,6 +875,12 @@ const styles = StyleSheet.create({
   },
   activeControlButton: {
     backgroundColor: Colors.primary,
+  },
+  connectedButton: {
+    backgroundColor: Colors.success,
+  },
+  disconnectedButton: {
+    backgroundColor: Colors.danger,
   },
   modeToggle: {
     position: 'absolute',
@@ -818,6 +1063,42 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
     color: Colors.text.primary,
+  },
+  // Offline bus indicators
+  offlineIndicator: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: Colors.danger,
+    borderRadius: 6,
+    width: 12,
+    height: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offlineText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: Colors.white,
+  },
+  offlineLabel: {
+    backgroundColor: Colors.danger,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    marginTop: 2,
+  },
+  offlineLabelText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: Colors.white,
+  },
+  loadingText: {
+    fontSize: 11,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   // Legacy styles (keeping for compatibility)
   busMarkerContainer: {

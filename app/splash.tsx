@@ -19,9 +19,6 @@ export default function SplashScreen() {
         if (user) {
           // Redirect based on user role
           switch (user.role) {
-            case 'ADMIN':
-              router.replace('/admin');
-              break;
             case 'DRIVER':
               router.replace('/driver');
               break;

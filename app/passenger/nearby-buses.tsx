@@ -59,7 +59,7 @@ export default function NearbyBuses() {
         id: bus.busId,
         routeNumber: bus.routeId,
         direction: `Route ${bus.routeId}`,
-        distanceFromUser: Math.random() * 2, // Mock distance - would need user location to calculate
+        distanceFromUser: 0, // TODO: Calculate real distance using user location
         crowdLevel: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as 'low' | 'medium' | 'high',
         arrivalTime: `${Math.floor(Math.random() * 20) + 1} min`,
         location: {
@@ -75,19 +75,7 @@ export default function NearbyBuses() {
       console.error('Error loading nearby buses:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load nearby buses';
       setError(errorMessage);
-      
-      // Fallback to demo data
-      setBuses([
-        {
-          id: 'demo',
-          routeNumber: '⚠️ Demo',
-          direction: 'Backend Connection Failed',
-          distanceFromUser: 0,
-          crowdLevel: 'low',
-          arrivalTime: 'N/A',
-          location: { latitude: 6.9271, longitude: 79.8612 }
-        }
-      ]);
+      setBuses([]);
     } finally {
       setLoading(false);
       setIsRefreshing(false);

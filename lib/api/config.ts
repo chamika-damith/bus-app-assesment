@@ -6,7 +6,7 @@
  */
 export const API_CONFIG = {
   // Base URL for the API
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.204.176:5000',
+  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.204.176:5001',
   
   // Request timeout in milliseconds
   TIMEOUT: 15000, // 15 seconds
@@ -49,9 +49,9 @@ export const API_CONFIG = {
   
   // Development configuration
   DEV: {
-    ENABLE_LOGGING: __DEV__,
-    LOG_REQUESTS: __DEV__,
-    LOG_RESPONSES: __DEV__,
+    ENABLE_LOGGING: process.env.NODE_ENV === 'development',
+    LOG_REQUESTS: process.env.NODE_ENV === 'development',
+    LOG_RESPONSES: process.env.NODE_ENV === 'development',
     MOCK_DELAYS: false,
   },
 } as const;
@@ -60,7 +60,7 @@ export const API_CONFIG = {
  * Environment-specific configurations
  */
 export const getEnvironmentConfig = () => {
-  const isDevelopment = __DEV__;
+  const isDevelopment = process.env.NODE_ENV === 'development';
   const isProduction = !isDevelopment;
   
   return {
@@ -97,7 +97,10 @@ export const API_ENDPOINTS = {
     REGISTER_DRIVER: '/api/gps/driver/register',
     REGISTER_USER: '/api/users',
     REFRESH: '/api/auth/refresh', // Not implemented in backend yet
-    LOGOUT: '/api/auth/logout', // Not implemented in backend yet
+    LOGOUT: '/api/gps/driver/logout', // Enhanced driver logout
+    VALIDATE_SESSION: '/api/gps/driver/validate-session', // Session validation
+    UPDATE_STATUS: '/api/gps/driver/status', // Driver online/offline status
+    GET_STATUS: (driverId: string) => `/api/gps/driver/status/${driverId}`, // Get driver status
   },
   
   // GPS and Location
@@ -121,9 +124,17 @@ export const API_ENDPOINTS = {
   // Driver Management
   DRIVERS: {
     GET_ALL: '/api/gps/admin/drivers',
+    GET_DETAILS: (driverId: string) => `/api/gps/driver/details/${driverId}`,
     REGISTER: '/api/gps/driver/register',
     REMOVE: (driverId: string) => `/api/gps/admin/driver/${driverId}`,
     GET_STATS: '/api/gps/admin/stats',
+  },
+  
+  // Session Management (Admin)
+  SESSIONS: {
+    GET_ACTIVE: '/api/gps/admin/sessions',
+    GET_STATS: '/api/gps/admin/session-stats',
+    FORCE_END: (sessionId: string) => `/api/gps/admin/session/${sessionId}`,
   },
   
   // System

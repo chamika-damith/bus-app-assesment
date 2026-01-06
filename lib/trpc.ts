@@ -11,7 +11,7 @@ export const trpc = createTRPCReact<AppRouter>();
 export const trpcClient = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
-      url: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/trpc',
+      url: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.204.176:3000/trpc',
       transformer: superjson,
     }),
   ],

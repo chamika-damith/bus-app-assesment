@@ -33,47 +33,7 @@ interface RideRequest {
 
 export default function DriverRides() {
   const [activeTab, setActiveTab] = useState<'requests' | 'active' | 'completed'>('requests');
-
-  const rideRequests: RideRequest[] = [
-    {
-      id: '1',
-      passenger: {
-        name: 'Alice Johnson',
-        rating: 4.8,
-        phone: '+1234567890',
-      },
-      pickup: {
-        address: '123 Main St, Downtown',
-        time: '2:30 PM',
-      },
-      dropoff: {
-        address: 'Airport Terminal 1',
-      },
-      distance: '12.5 km',
-      duration: '25 min',
-      fare: 45.00,
-      status: 'pending',
-    },
-    {
-      id: '2',
-      passenger: {
-        name: 'Bob Smith',
-        rating: 4.9,
-        phone: '+1234567891',
-      },
-      pickup: {
-        address: '456 Oak Ave, Midtown',
-        time: '3:00 PM',
-      },
-      dropoff: {
-        address: 'University Campus',
-      },
-      distance: '8.2 km',
-      duration: '18 min',
-      fare: 28.50,
-      status: 'accepted',
-    },
-  ];
+  const rideRequests: RideRequest[] = [];
 
   const filteredRides = rideRequests.filter(ride => {
     switch (activeTab) {

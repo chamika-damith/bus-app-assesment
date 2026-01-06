@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { 
   Power, 
@@ -19,61 +20,103 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api/client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+interface DriverSession {
+  driverId: string;
+  sessionId: string;
+  busId: string;
+  routeId: string;
+  isOnline: boolean;
+}
 
 export default function DriverDashboard() {
   const { user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [session, setSession] = useState<DriverSession | null>(null);
+  const apiClient = getAPIClient();
 
-  const stats = [
-    {
-      title: 'Today\'s Earnings',
-      value: '$127.50',
-      icon: <DollarSign size={24} color={Colors.success} />,
-      change: '+12%',
-    },
-    {
-      title: 'Hours Driven',
-      value: '6.5h',
-      icon: <Clock size={24} color={Colors.primary} />,
-      change: '+0.5h',
-    },
-    {
-      title: 'Trips Completed',
-      value: '8',
-      icon: <Navigation size={24} color={Colors.secondary} />,
-      change: '+2',
-    },
-    {
-      title: 'Rating',
-      value: '4.8',
-      icon: <Star size={24} color={Colors.warning} />,
-      change: '+0.1',
-    },
-  ];
+  useEffect(() => {
+    loadDriverSession();
+  }, []);
 
-  const recentRides = [
-    {
-      id: '1',
-      passenger: 'Alice Johnson',
-      from: 'Downtown',
-      to: 'Airport',
-      time: '2 hours ago',
-      earnings: '$45.00',
-      rating: 5,
-    },
-    {
-      id: '2',
-      passenger: 'Bob Smith',
-      from: 'Mall',
-      to: 'University',
-      time: '4 hours ago',
-      earnings: '$18.50',
-      rating: 4,
-    },
-  ];
+  const loadDriverSession = async () => {
+    try {
+      const savedSession = await AsyncStorage.getItem('@driver_session');
+      if (savedSession) {
+        const parsedSession = JSON.parse(savedSession);
+        setSession(parsedSession);
+        setIsOnline(parsedSession.isOnline || false);
+        
+        // Sync status with backend
+        if (parsedSession.driverId) {
+          try {
+            const statusResponse = await apiClient.getDriverStatus(parsedSession.driverId);
+            if (statusResponse.success) {
+              const backendIsOnline = statusResponse.data.isOnline;
+              if (backendIsOnline !== parsedSession.isOnline) {
+                // Update local session to match backend
+                const updatedSession = { ...parsedSession, isOnline: backendIsOnline };
+                setSession(updatedSession);
+                setIsOnline(backendIsOnline);
+                await AsyncStorage.setItem('@driver_session', JSON.stringify(updatedSession));
+              }
+            }
+          } catch (error) {
+            console.error('Failed to sync status with backend:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load driver session:', error);
+    }
+  };
 
-  const toggleOnlineStatus = () => {
-    setIsOnline(!isOnline);
+  const toggleOnlineStatus = async () => {
+    if (!session) {
+      Alert.alert('Error', 'No active driver session found. Please restart the app.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const newOnlineStatus = !isOnline;
+      
+      // Update status on backend
+      await apiClient.updateDriverStatus(session.driverId, session.sessionId, newOnlineStatus);
+      
+      // Update local state
+      setIsOnline(newOnlineStatus);
+      
+      // Update stored session
+      const updatedSession = { ...session, isOnline: newOnlineStatus };
+      setSession(updatedSession);
+      await AsyncStorage.setItem('@driver_session', JSON.stringify(updatedSession));
+      
+      Alert.alert(
+        'Status Updated',
+        `You are now ${newOnlineStatus ? 'online' : 'offline'}. ${
+          newOnlineStatus 
+            ? 'Passengers can see your location and request rides.' 
+            : 'You will not receive ride requests.'
+        }`
+      );
+      
+    } catch (error) {
+      console.error('Failed to update online status:', error);
+      Alert.alert(
+        'Update Failed', 
+        'Failed to update your online status. Please check your internet connection and try again.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleOnlineStatus = () => {
+    toggleOnlineStatus();
   };
 
   return (
@@ -86,29 +129,14 @@ export default function DriverDashboard() {
           </View>
           <TouchableOpacity
             style={[styles.statusButton, isOnline && styles.statusButtonOnline]}
-            onPress={toggleOnlineStatus}
+            onPress={handleToggleOnlineStatus}
+            disabled={isLoading}
           >
             <Power size={20} color={isOnline ? Colors.white : Colors.gray[600]} />
             <Text style={[styles.statusText, isOnline && styles.statusTextOnline]}>
-              {isOnline ? 'Online' : 'Offline'}
+              {isLoading ? 'Updating...' : (isOnline ? 'Online' : 'Offline')}
             </Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
-            <View key={index} style={styles.statCard}>
-              <View style={styles.statHeader}>
-                {stat.icon}
-                <View style={styles.statChange}>
-                  <TrendingUp size={12} color={Colors.success} />
-                  <Text style={styles.changeText}>{stat.change}</Text>
-                </View>
-              </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statTitle}>{stat.title}</Text>
-            </View>
-          ))}
         </View>
 
         {isOnline && (
@@ -124,32 +152,10 @@ export default function DriverDashboard() {
           </View>
         )}
 
-        <View style={styles.recentRides}>
-          <Text style={styles.sectionTitle}>Recent Rides</Text>
-          {recentRides.map((ride) => (
-            <View key={ride.id} style={styles.rideCard}>
-              <View style={styles.rideHeader}>
-                <Text style={styles.passengerName}>{ride.passenger}</Text>
-                <Text style={styles.earnings}>{ride.earnings}</Text>
-              </View>
-              <View style={styles.rideRoute}>
-                <Text style={styles.routeText}>{ride.from} → {ride.to}</Text>
-              </View>
-              <View style={styles.rideFooter}>
-                <Text style={styles.rideTime}>{ride.time}</Text>
-                <View style={styles.rideRating}>
-                  <Star size={14} color={Colors.warning} fill={Colors.warning} />
-                  <Text style={styles.ratingText}>{ride.rating}</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {!isOnline && (
+        {!isOnline && !isLoading && (
           <Button
             title="Go Online"
-            onPress={toggleOnlineStatus}
+            onPress={handleToggleOnlineStatus}
             style={styles.goOnlineButton}
           />
         )}

@@ -18,7 +18,6 @@ import { Colors } from '../../constants/colors';
 const ROLES = [
   { label: 'Passenger', value: 'PASSENGER' as UserRole },
   { label: 'Driver', value: 'DRIVER' as UserRole },
-  { label: 'Admin', value: 'ADMIN' as UserRole },
 ];
 
 export default function Register() {
@@ -29,15 +28,35 @@ export default function Register() {
     confirmPassword: '',
     phone: '',
     role: 'PASSENGER' as UserRole,
+    deviceId: '',
+    // Driver-specific fields
+    nic: '',
+    route: '',
+    vehicleNumber: '',
+    // Passenger-specific fields (telephone is same as phone)
   });
   const [loading, setLoading] = useState(false);
   const [showRolePicker, setShowRolePicker] = useState(false);
   const { register } = useAuth();
 
   const handleRegister = async () => {
+    // Common field validation
     if (!formData.name || !formData.email || !formData.password) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
+    }
+
+    // Role-specific validation
+    if (formData.role === 'DRIVER') {
+      if (!formData.phone || !formData.nic || !formData.route || !formData.vehicleNumber) {
+        Alert.alert('Error', 'Please fill in all driver fields: Phone, NIC, Route, and Vehicle Number');
+        return;
+      }
+    } else if (formData.role === 'PASSENGER') {
+      if (!formData.phone || !formData.nic) {
+        Alert.alert('Error', 'Please fill in all passenger fields: Phone and NIC');
+        return;
+      }
     }
 
     if (formData.password !== formData.confirmPassword) {
@@ -52,16 +71,26 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await register({
+      const registrationData: any = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
         role: formData.role,
         phone: formData.phone,
-      });
+        nic: formData.nic,
+        route: formData.role === 'DRIVER' ? formData.route : undefined,
+        vehicleNumber: formData.role === 'DRIVER' ? formData.vehicleNumber : undefined,
+      };
+
+      // Only add deviceId if user entered one
+      if (formData.deviceId && formData.deviceId.trim() !== '') {
+        registrationData.deviceId = formData.deviceId.trim();
+      }
+
+      await register(registrationData);
       router.replace('/');
     } catch (error) {
-      Alert.alert('Error', 'Registration failed. Please try again.');
+      Alert.alert('Error', error instanceof Error ? error.message : 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -97,15 +126,6 @@ export default function Register() {
             onChangeText={(value) => updateFormData('email', value)}
             placeholder="Enter your email"
             autoComplete="email"
-          />
-
-          <Input
-            label="Phone Number"
-            type="phone"
-            value={formData.phone}
-            onChangeText={(value) => updateFormData('phone', value)}
-            placeholder="Enter your phone number"
-            autoComplete="tel"
           />
 
           <View style={styles.pickerContainer}>
@@ -144,6 +164,49 @@ export default function Register() {
             placeholder="Enter your password"
             autoComplete="new-password"
           />
+
+          {/* Common Fields */}
+          <Input
+            label="Phone Number *"
+            type="phone"
+            value={formData.phone}
+            onChangeText={(value) => updateFormData('phone', value)}
+            placeholder="Enter your phone number"
+            autoComplete="tel"
+          />
+
+          <Input
+            label="Device ID"
+            value={formData.deviceId}
+            onChangeText={(value) => updateFormData('deviceId', value)}
+            placeholder="Optional: Enter device ID"
+          />
+
+          <Input
+            label="NIC (National Identity Card) *"
+            value={formData.nic}
+            onChangeText={(value) => updateFormData('nic', value)}
+            placeholder="Enter your NIC number"
+          />
+
+          {/* Driver-Specific Fields */}
+          {formData.role === 'DRIVER' && (
+            <>
+              <Input
+                label="Route *"
+                value={formData.route}
+                onChangeText={(value) => updateFormData('route', value)}
+                placeholder="e.g., Route 138, Colombo-Kandy"
+              />
+
+              <Input
+                label="Vehicle Number *"
+                value={formData.vehicleNumber}
+                onChangeText={(value) => updateFormData('vehicleNumber', value)}
+                placeholder="e.g., WP CAB-1234"
+              />
+            </>
+          )}
 
           <Input
             label="Confirm Password *"

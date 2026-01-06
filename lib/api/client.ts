@@ -1,4 +1,4 @@
-import { 
+import {
   APIClient,
   LoginCredentials,
   AuthResponse,
@@ -13,6 +13,10 @@ import {
   Driver,
   DriverRegistration,
   DriverResponse,
+  SessionValidation,
+  SessionResponse,
+  ActiveSession,
+  SessionStats,
   // Schemas for validation
   LoginCredentialsSchema,
   AuthResponseSchema,
@@ -26,6 +30,10 @@ import {
   DriverSchema,
   DriverRegistrationSchema,
   DriverResponseSchema,
+  SessionValidationSchema,
+  SessionResponseSchema,
+  ActiveSessionSchema,
+  SessionStatsSchema,
 } from './types';
 import { AuthenticatedHTTPClient, HTTPError } from './http-client';
 import { TokenManager, UserDataManager, DeviceManager } from './storage';
@@ -40,7 +48,7 @@ export class BusTrackingAPIClient implements APIClient {
   constructor(baseURL?: string) {
     const config = getEnvironmentConfig();
     this.baseURL = baseURL || config.apiUrl;
-    
+
     this.httpClient = new AuthenticatedHTTPClient({
       baseURL: this.baseURL,
       timeout: config.timeout,
@@ -56,104 +64,106 @@ export class BusTrackingAPIClient implements APIClient {
   // ==================== AUTHENTICATION METHODS ====================
 
   /**
-   * Login user with credentials
+   * Login user with credentials (email-only authentication)
    */
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
       // Validate input
       const validatedCredentials = LoginCredentialsSchema.parse(credentials);
-      
-      // Add device ID if not provided
-      if (!validatedCredentials.deviceId) {
-        validatedCredentials.deviceId = await DeviceManager.getDeviceId();
+
+      // Email-only authentication for drivers
+      if (!validatedCredentials.email || !validatedCredentials.password) {
+        throw new Error('Email and password are required');
       }
 
-      // The backend has different login systems:
-      // 1. Driver login: POST /api/gps/driver/login (uses phone + deviceId)
-      // 2. Regular user login: Not implemented in backend yet
-      
-      // For now, we'll try driver login first if phone is provided
-      if (validatedCredentials.phone) {
-        try {
-          const driverLoginData = {
-            phone: validatedCredentials.phone,
-            deviceId: validatedCredentials.deviceId,
-          };
+      // Try driver login using email and password
+      try {
+        const driverLoginData = {
+          email: validatedCredentials.email,
+          password: validatedCredentials.password,
+        };
 
-          const response = await this.httpClient.post(API_ENDPOINTS.AUTH.LOGIN, driverLoginData);
-          
-          if (response.data.success && response.data.data) {
-            const driverInfo = response.data.data;
-            
-            const authResponse: AuthResponse = {
-              success: true,
-              user: {
-                id: driverInfo.driverId,
-                name: driverInfo.name,
-                phone: driverInfo.phone,
-                role: 'DRIVER',
-                driverId: driverInfo.driverId,
-                busId: driverInfo.busId,
-                routeId: driverInfo.routeId,
-                licenseNumber: driverInfo.licenseNumber,
-              },
-              token: 'driver_session_' + driverInfo.driverId, // Create a session token
-              message: response.data.message || 'Login successful',
-            };
-            
-            // Store tokens and user data
-            await TokenManager.setTokens(authResponse.token);
-            await UserDataManager.setUserData(authResponse.user);
-            
-            return authResponse;
-          }
-        } catch (driverLoginError) {
-          // If driver login fails, continue to try email-based login
-          console.log('Driver login failed, trying email login');
-        }
-      }
+        const response = await this.httpClient.post(API_ENDPOINTS.AUTH.LOGIN, driverLoginData);
 
-      // For email-based login, validate against real backend users
-      if (validatedCredentials.email) {
-        try {
-          // Get all users from backend to validate credentials
-          const users = await this.getUsers();
-          
-          // Find user with matching email
-          const user = users.find(u => u.email === validatedCredentials.email);
-          
-          if (!user) {
-            throw new Error('User not found');
-          }
+        if (response.data.success && response.data.data) {
+          const driverInfo = response.data.data;
 
-          // Note: In a real implementation, password should be validated on backend
-          // For now, we'll create a proper authenticated session
           const authResponse: AuthResponse = {
             success: true,
             user: {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              phone: user.phone,
-              role: user.role || 'PASSENGER',
-              createdAt: user.createdAt,
+              id: driverInfo.driverId,
+              name: driverInfo.name,
+              email: driverInfo.email,
+              phone: driverInfo.phone,
+              role: 'DRIVER',
+              driverId: driverInfo.driverId,
+              busId: driverInfo.busId,
+              routeId: driverInfo.routeId,
+              licenseNumber: driverInfo.licenseNumber,
             },
-            token: 'user_session_' + user.id + '_' + Date.now(),
-            message: 'Login successful',
+            token: 'driver_session_' + driverInfo.driverId, // Create a session token
+            message: response.data.message || 'Login successful',
+            // Enhanced session data
+            sessionId: driverInfo.sessionId,
+            sessionStartTime: driverInfo.sessionStartTime,
+            sessionExpiresAt: driverInfo.sessionExpiresAt,
           };
 
           // Store tokens and user data
           await TokenManager.setTokens(authResponse.token);
           await UserDataManager.setUserData(authResponse.user);
-          
+
           return authResponse;
-        } catch (error) {
+        }
+      } catch (driverLoginError) {
+        console.error('Driver login failed:', driverLoginError);
+
+        // If it's a 401 error, it means invalid credentials
+        if (driverLoginError instanceof HTTPError && driverLoginError.status === 401) {
           throw new Error('Invalid email or password');
         }
+
+        // For other errors, continue to try regular user login
+        console.log('Driver login failed, trying regular user login');
       }
 
-      throw new Error('Invalid credentials or login method not supported');
-      
+      // For regular users (passengers), validate against backend users
+      try {
+        // Get all users from backend to validate credentials
+        const users = await this.getUsers();
+
+        // Find user with matching email
+        const user = users.find(u => u.email === validatedCredentials.email);
+
+        if (!user) {
+          throw new Error('Invalid email or password');
+        }
+
+        // Note: In a real implementation, password should be validated on backend
+        // For now, we'll create a proper authenticated session
+        const authResponse: AuthResponse = {
+          success: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role || 'PASSENGER',
+            createdAt: user.createdAt,
+          },
+          token: 'user_session_' + user.id + '_' + Date.now(),
+          message: 'Login successful',
+        };
+
+        // Store tokens and user data
+        await TokenManager.setTokens(authResponse.token);
+        await UserDataManager.setUserData(authResponse.user);
+
+        return authResponse;
+      } catch (error) {
+        throw new Error('Invalid email or password');
+      }
+
     } catch (error) {
       if (error instanceof HTTPError) {
         throw new Error(error.data?.message || 'Login failed');
@@ -169,68 +179,90 @@ export class BusTrackingAPIClient implements APIClient {
     try {
       // Validate input
       const validatedUserData = RegisterDataSchema.parse(userData);
-      
+
       // Add device ID if not provided
       if (!validatedUserData.deviceId) {
         validatedUserData.deviceId = await DeviceManager.getDeviceId();
       }
 
-      // For driver registration, use the driver registration endpoint
+      // For driver registration, call the driver registration endpoint
       if (validatedUserData.role === 'DRIVER') {
-        // Driver registration requires additional fields that should be collected in UI
-        // For now, we'll use placeholder values and let the user complete them later
-        const driverData: DriverRegistration = {
+        if (!validatedUserData.email) {
+          throw new Error('Email is required for Driver registration');
+        }
+        if (!validatedUserData.phone) {
+          throw new Error('Phone number is required for Driver registration');
+        }
+        if (!validatedUserData.nic) {
+          throw new Error('NIC is required for Driver registration');
+        }
+        if (!validatedUserData.route) {
+          throw new Error('Route is required for Driver registration');
+        }
+        if (!validatedUserData.vehicleNumber) {
+          throw new Error('Vehicle Number is required for Driver registration');
+        }
+
+        // Driver registration with all required fields
+        const driverRegistrationData = {
           name: validatedUserData.name,
-          phone: validatedUserData.phone || validatedUserData.email || '',
-          licenseNumber: 'TEMP_LICENSE', // Placeholder - should be collected in UI
-          busId: 'TEMP_BUS', // Placeholder - should be assigned by admin
-          routeId: 'TEMP_ROUTE', // Placeholder - should be assigned by admin
-          deviceId: validatedUserData.deviceId,
+          email: validatedUserData.email,
+          password: validatedUserData.password,
+          phone: validatedUserData.phone, // Backend expects 'phone' in request body
+          licenseNumber: validatedUserData.nic, // NIC is used as license number
+          busId: validatedUserData.vehicleNumber, // Vehicle number is used as busId
+          routeId: validatedUserData.route, // Route is used as routeId
         };
 
-        const response = await this.httpClient.post(API_ENDPOINTS.DRIVERS.REGISTER, driverData);
-        
-        // The backend returns a different structure than our schema expects
-        if (response.data.success && response.data.data) {
-          const driverInfo = response.data.data;
-          
-          const authResponse: AuthResponse = {
-            success: true,
-            user: {
-              id: driverInfo.driverId,
-              name: driverInfo.name,
-              phone: driverInfo.phone,
-              role: 'DRIVER',
-              driverId: driverInfo.driverId,
-              busId: driverInfo.busId,
-              routeId: driverInfo.routeId,
-              licenseNumber: driverInfo.licenseNumber,
-            },
-            token: '', // Driver registration doesn't return token, need to login
-            message: response.data.message || 'Driver registered successfully',
-          };
-          
-          return authResponse;
+        try {
+          const response = await this.httpClient.post(API_ENDPOINTS.DRIVERS.REGISTER, driverRegistrationData);
+
+          if (response.data.success && response.data.data) {
+            const driverData = response.data.data;
+
+            // After successful registration, automatically log in
+            return await this.login({
+              email: validatedUserData.email,
+              password: validatedUserData.password,
+            });
+          }
+
+          throw new Error('Driver registration failed');
+        } catch (error) {
+          // If registration fails (e.g., driver already exists), throw error
+          if (error instanceof HTTPError) {
+            if (error.status === 409) {
+              throw new Error('A driver with this email or NIC already exists');
+            } else if (error.status === 400) {
+              throw new Error('Invalid driver registration data');
+            }
+          }
+          throw error;
         }
-        
-        throw new Error(response.data.message || 'Driver registration failed');
       } else {
-        // For regular user registration (PASSENGER/ADMIN)
+        // For regular user registration (PASSENGER)
         // The backend User model expects: name, email, password, telephone, nic
+        if (!validatedUserData.phone) {
+          throw new Error('Phone number is required for Passenger registration');
+        }
+        if (!validatedUserData.nic) {
+          throw new Error('NIC is required for Passenger registration');
+        }
+
         const backendUserData = {
           name: validatedUserData.name,
           email: validatedUserData.email || `${validatedUserData.phone}@temp.com`, // Backend requires email
           password: validatedUserData.password,
-          telephone: validatedUserData.phone || 'N/A', // Backend expects 'telephone' not 'phone'
-          nic: 'TEMP_NIC_' + Date.now(), // Backend requires NIC (National Identity Card) - use temp value
+          telephone: validatedUserData.phone, // Backend expects 'telephone' not 'phone'
+          nic: validatedUserData.nic,
         };
 
         const response = await this.httpClient.post(API_ENDPOINTS.USERS.CREATE, backendUserData);
-        
+
         // The backend returns { success: true, data: user }
         if (response.data.success && response.data.data) {
           const backendUser = response.data.data;
-          
+
           // Convert backend user format to our User format
           const user: User = {
             id: backendUser._id || backendUser.id,
@@ -240,17 +272,17 @@ export class BusTrackingAPIClient implements APIClient {
             role: validatedUserData.role, // Use the role from registration form
             createdAt: backendUser.createdAt,
           };
-          
+
           const authResponse: AuthResponse = {
             success: true,
             user,
             token: '', // User creation doesn't return token, need to login
             message: 'User registered successfully',
           };
-          
+
           return authResponse;
         }
-        
+
         throw new Error('User registration failed');
       }
     } catch (error) {
@@ -276,21 +308,151 @@ export class BusTrackingAPIClient implements APIClient {
       const response = await this.httpClient.post(API_ENDPOINTS.AUTH.REFRESH, {
         refreshToken,
       });
-      
+
       const tokenResponse = TokenResponseSchema.parse(response.data);
-      
+
       if (tokenResponse.success && tokenResponse.token) {
         await TokenManager.setTokens(
           tokenResponse.token,
           tokenResponse.refreshToken
         );
       }
-      
+
       return tokenResponse;
     } catch (error) {
       await TokenManager.clearTokens();
       if (error instanceof HTTPError) {
         throw new Error(error.data?.message || 'Token refresh failed');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update driver online/offline status
+   */
+  async updateDriverStatus(driverId: string, sessionId: string, isOnline: boolean): Promise<void> {
+    try {
+      await this.httpClient.post(API_ENDPOINTS.AUTH.UPDATE_STATUS, {
+        driverId,
+        sessionId,
+        isOnline,
+      });
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to update driver status');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get driver online/offline status
+   */
+  async getDriverStatus(driverId: string): Promise<any> {
+    try {
+      const response = await this.httpClient.get(API_ENDPOINTS.AUTH.GET_STATUS(driverId));
+      return response.data;
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get driver status');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get detailed driver information
+   */
+  async getDriverDetails(driverId: string): Promise<any> {
+    try {
+      const response = await this.httpClient.get(API_ENDPOINTS.DRIVERS.GET_DETAILS(driverId));
+      return response.data;
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get driver details');
+      }
+      throw error;
+    }
+  }
+
+  // ==================== SESSION MANAGEMENT METHODS ====================
+
+  /**
+   * Validate driver session
+   */
+  async validateSession(sessionId: string): Promise<SessionResponse> {
+    try {
+      const response = await this.httpClient.post(API_ENDPOINTS.AUTH.VALIDATE_SESSION, {
+        sessionId,
+      });
+
+      return SessionResponseSchema.parse(response.data);
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Session validation failed');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Logout driver (end session)
+   */
+  async logoutDriver(sessionId: string): Promise<void> {
+    try {
+      await this.httpClient.post(API_ENDPOINTS.AUTH.LOGOUT, {
+        sessionId,
+      });
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Logout failed');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get active sessions (admin only)
+   */
+  async getActiveSessions(): Promise<ActiveSession[]> {
+    try {
+      const response = await this.httpClient.get(API_ENDPOINTS.SESSIONS.GET_ACTIVE);
+
+      const sessions = response.data.data || response.data;
+      return sessions.map((session: any) => ActiveSessionSchema.parse(session));
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get active sessions');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get session statistics (admin only)
+   */
+  async getSessionStats(): Promise<SessionStats> {
+    try {
+      const response = await this.httpClient.get(API_ENDPOINTS.SESSIONS.GET_STATS);
+      return SessionStatsSchema.parse(response.data.data || response.data);
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get session statistics');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Force end session (admin only)
+   */
+  async forceEndSession(sessionId: string): Promise<void> {
+    try {
+      await this.httpClient.delete(API_ENDPOINTS.SESSIONS.FORCE_END(sessionId));
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to end session');
       }
       throw error;
     }
@@ -305,7 +467,7 @@ export class BusTrackingAPIClient implements APIClient {
     try {
       // Validate input
       const validatedLocationData = LocationUpdateSchema.parse(locationData);
-      
+
       await this.httpClient.post(API_ENDPOINTS.GPS.UPDATE_LOCATION, validatedLocationData);
     } catch (error) {
       if (error instanceof HTTPError) {
@@ -321,10 +483,10 @@ export class BusTrackingAPIClient implements APIClient {
   async getLiveBuses(): Promise<BusLocation[]> {
     try {
       const response = await this.httpClient.get(API_ENDPOINTS.GPS.GET_LIVE_BUSES);
-      
+
       // Handle backend response format
       const drivers = response.data.data || response.data;
-      
+
       const busLocations: BusLocation[] = drivers.map((driver: any) => ({
         busId: driver.busId,
         routeId: driver.routeId,
@@ -340,7 +502,7 @@ export class BusTrackingAPIClient implements APIClient {
         isActive: driver.isActive,
         lastUpdate: new Date(driver.lastSeen).toISOString(),
       }));
-      
+
       return busLocations;
     } catch (error) {
       if (error instanceof HTTPError) {
@@ -395,10 +557,10 @@ export class BusTrackingAPIClient implements APIClient {
   async getUsers(): Promise<User[]> {
     try {
       const response = await this.httpClient.get(API_ENDPOINTS.USERS.GET_ALL);
-      
+
       // Handle backend response format: {success: true, data: [...]}
       const users = response.data.data || response.data;
-      
+
       return users.map((user: any) => ({
         id: user._id || user.id,
         name: user.name,
@@ -469,10 +631,10 @@ export class BusTrackingAPIClient implements APIClient {
   async getDrivers(): Promise<Driver[]> {
     try {
       const response = await this.httpClient.get(API_ENDPOINTS.DRIVERS.GET_ALL);
-      
+
       // Handle backend response format
       const drivers = response.data.data || response.data;
-      
+
       return drivers.map((driver: any) => ({
         id: driver.id || driver.driverId,
         driverId: driver.driverId || driver.id,

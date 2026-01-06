@@ -49,6 +49,32 @@ export default function BusTracking() {
 
   const apiClient = getAPIClient();
 
+  // Helper function to calculate ETA
+  const calculateETA = (lat: number, lng: number, speed: number): string => {
+    // Simple ETA calculation based on distance and speed
+    // In real app, use proper route calculation
+    const userLat = 6.9271; // Default Colombo coordinates
+    const userLng = 79.8612;
+    
+    const distance = calculateDistance(lat, lng, userLat, userLng);
+    const timeInHours = distance / Math.max(speed, 10); // Minimum 10 km/h
+    const timeInMinutes = Math.round(timeInHours * 60);
+    
+    return `${Math.max(1, timeInMinutes)} min`;
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
   useEffect(() => {
     loadBusInfo();
     
@@ -69,44 +95,61 @@ export default function BusTracking() {
       console.log('Loading bus info for:', busId);
 
       if (busId) {
-        // Get specific bus location
-        const busLocation = await apiClient.getBusLocation(busId);
+        // Get specific bus location using the correct API endpoint
+        const API_BASE_URL = 'http://192.168.204.176:5001/api'; // Use same URL as map component
+        const response = await fetch(`${API_BASE_URL}/gps/bus/${busId}/location`);
+        const busLocationData = await response.json();
         
-        setBusInfo({
-          id: busLocation.busId,
-          routeNumber: busLocation.routeId,
-          routeName: `Route ${busLocation.routeId}`,
-          arrivalTime: busLocation.estimatedArrival || 'Calculating...',
-          isLive: busLocation.isActive,
-          crowdLevel: 'medium', // Default value - could be enhanced
-          distanceToUser: 0, // Would need user location to calculate
-          currentLocation: {
-            latitude: busLocation.location.latitude,
-            longitude: busLocation.location.longitude,
-          },
-          lastUpdate: busLocation.lastUpdate,
-          speed: busLocation.location.speed,
-        });
-      } else {
-        // Get live buses and pick the first one as demo
-        const liveBuses = await apiClient.getLiveBuses();
-        
-        if (liveBuses.length > 0) {
-          const firstBus = liveBuses[0];
+        if (busLocationData.success && busLocationData.data) {
+          const busData = busLocationData.data;
+          const routeNumber = busId.split('_')[1] || 'Unknown';
+          
           setBusInfo({
-            id: firstBus.busId,
-            routeNumber: firstBus.routeId,
-            routeName: `Route ${firstBus.routeId}`,
-            arrivalTime: firstBus.estimatedArrival || 'Calculating...',
-            isLive: firstBus.isActive,
+            id: busId,
+            routeNumber: routeNumber,
+            routeName: `Route ${busData.routeId || routeNumber}`,
+            arrivalTime: busData.estimatedArrival || calculateETA(busData.latitude, busData.longitude, busData.speed || 0),
+            isLive: busData.isOnline !== false,
+            crowdLevel: 'medium', // Default value - could be enhanced
+            distanceToUser: 0, // Would need user location to calculate
+            currentLocation: {
+              latitude: busData.latitude || 0,
+              longitude: busData.longitude || 0,
+            },
+            lastUpdate: busData.lastSeen ? new Date(busData.lastSeen).toLocaleString() : 'Just now',
+            speed: busData.speed || 0,
+          });
+        } else {
+          throw new Error(busLocationData.message || 'Bus not found or offline');
+        }
+      } else {
+        // Get live buses if no specific busId provided
+        const API_BASE_URL = 'http://192.168.204.176:5001/api';
+        const response = await fetch(`${API_BASE_URL}/gps/buses/live`);
+        const liveBusesData = await response.json();
+        
+        if (liveBusesData.success && liveBusesData.data && liveBusesData.data.length > 0) {
+          const firstBus = liveBusesData.data[0];
+          const routeNumber = firstBus.busId ? firstBus.busId.split('_')[1] || 'Unknown' : 'Unknown';
+          
+          setBusInfo({
+            id: firstBus.busId || 'unknown',
+            routeNumber: routeNumber,
+            routeName: `Route ${firstBus.routeId || routeNumber}`,
+            arrivalTime: calculateETA(
+              firstBus.latitude || firstBus.location?.latitude || 0, 
+              firstBus.longitude || firstBus.location?.longitude || 0, 
+              firstBus.speed || firstBus.location?.speed || 0
+            ),
+            isLive: firstBus.isOnline !== false,
             crowdLevel: 'medium',
             distanceToUser: 0,
             currentLocation: {
-              latitude: firstBus.location.latitude,
-              longitude: firstBus.location.longitude,
+              latitude: firstBus.latitude || firstBus.location?.latitude || 0,
+              longitude: firstBus.longitude || firstBus.location?.longitude || 0,
             },
-            lastUpdate: firstBus.lastUpdate,
-            speed: firstBus.location.speed,
+            lastUpdate: firstBus.lastUpdate || firstBus.lastSeen || 'Just now',
+            speed: firstBus.speed || firstBus.location?.speed || 0,
           });
         } else {
           throw new Error('No active buses found');
@@ -117,22 +160,7 @@ export default function BusTracking() {
       console.error('Error loading bus info:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load bus information';
       setError(errorMessage);
-      
-      // Fallback to demo data
-      setBusInfo({
-        id: 'demo',
-        routeNumber: '⚠️ Demo',
-        routeName: 'Backend Connection Failed',
-        arrivalTime: 'N/A',
-        isLive: false,
-        crowdLevel: 'low',
-        distanceToUser: 0,
-        currentLocation: {
-          latitude: 6.9271,
-          longitude: 79.8612,
-        },
-        lastUpdate: 'Error loading data',
-      });
+      setBusInfo(null);
     } finally {
       setLoading(false);
       setRefreshing(false);

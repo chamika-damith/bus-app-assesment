@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ArrowLeft, MapPin, Home, Briefcase, Heart, Plus, MoreVertical, Edit, Trash2 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import { useAuth } from '../../context/AuthContext';
 
 interface SavedPlace {
   id: string;
@@ -24,39 +26,27 @@ interface SavedPlace {
   };
 }
 
-const mockSavedPlaces: SavedPlace[] = [
-  {
-    id: '1',
-    name: 'Home',
-    address: 'No. 123, Galle Road, Colombo 03',
-    type: 'home',
-    coordinates: { latitude: 6.9271, longitude: 79.8612 }
-  },
-  {
-    id: '2',
-    name: 'Office',
-    address: 'World Trade Center, Colombo 01',
-    type: 'work',
-    coordinates: { latitude: 6.9344, longitude: 79.8428 }
-  },
-  {
-    id: '3',
-    name: 'University',
-    address: 'University of Colombo, Colombo 03',
-    type: 'favorite',
-    coordinates: { latitude: 6.9022, longitude: 79.8607 }
-  },
-  {
-    id: '4',
-    name: 'Shopping Mall',
-    address: 'Odel, Alexandra Place, Colombo 07',
-    type: 'custom',
-    coordinates: { latitude: 6.9147, longitude: 79.8731 }
-  }
-];
-
 export default function SavedPlaces() {
-  const [savedPlaces, setSavedPlaces] = useState<SavedPlace[]>(mockSavedPlaces);
+  const { user } = useAuth();
+  const [savedPlaces, setSavedPlaces] = useState<SavedPlace[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSavedPlaces();
+  }, []);
+
+  const loadSavedPlaces = async () => {
+    try {
+      setLoading(true);
+      // Load from user profile or backend
+      const userPlaces = user?.savedPlaces || [];
+      setSavedPlaces(userPlaces);
+    } catch (error) {
+      console.error('Failed to load saved places:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getPlaceIcon = (type: string) => {
     switch (type) {

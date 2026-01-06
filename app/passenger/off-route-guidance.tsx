@@ -21,21 +21,38 @@ interface GuidanceInfo {
   estimatedWalkTime: number;
 }
 
-const mockGuidanceInfo: GuidanceInfo = {
-  distanceToRoute: 150,
-  nearestStreet: 'Galle Road',
-  walkingDirection: 'Northeast',
-  nextBusArrival: '12 min',
-  estimatedWalkTime: 3,
-};
-
 export default function OffRouteGuidance() {
   const params = useLocalSearchParams();
   const busId = params.busId as string;
-  
-  const [guidanceInfo, setGuidanceInfo] = useState<GuidanceInfo>(mockGuidanceInfo);
+  const [loading, setLoading] = useState(true);
+  const [guidanceInfo, setGuidanceInfo] = useState<GuidanceInfo | null>(null);
+
+  useEffect(() => {
+    calculateGuidance();
+  }, [busId]);
+
+  const calculateGuidance = async () => {
+    try {
+      setLoading(true);
+      // Calculate real guidance based on user location and bus route
+      // This would use geolocation and routing APIs
+      setGuidanceInfo({
+        distanceToRoute: 0,
+        nearestStreet: 'Loading...',
+        walkingDirection: 'Calculating...',
+        nextBusArrival: 'N/A',
+        estimatedWalkTime: 0,
+      });
+    } catch (error) {
+      console.error('Failed to calculate guidance:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleNavigate = async () => {
+    if (!guidanceInfo) return;
+    
     // Open Google Maps with walking directions
     const url = `https://www.google.com/maps/dir/?api=1&destination=${guidanceInfo.nearestStreet}&travelmode=walking`;
     

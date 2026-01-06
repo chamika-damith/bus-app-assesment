@@ -1,13 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAPIClient, User, LoginCredentials, RegisterData, TokenManager, UserDataManager } from '../lib/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type UserRole = 'DRIVER' | 'PASSENGER' | 'ADMIN';
+export type UserRole = 'DRIVER' | 'PASSENGER';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   authToken: string | null;
+  
+  // Enhanced session data
+  sessionId: string | null;
+  sessionExpiresAt: number | null;
   
   // Core auth methods
   login: (email: string, password: string) => Promise<void>;
@@ -17,6 +22,10 @@ interface AuthContextType {
   // Token management
   refreshToken: () => Promise<void>;
   isTokenValid: () => boolean;
+  
+  // Session management
+  validateSession: () => Promise<boolean>;
+  isSessionExpired: () => boolean;
   
   // User management
   updateUser: (userData: Partial<User>) => Promise<void>;
@@ -33,6 +42,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  
+  // Enhanced session state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
   
   const apiClient = getAPIClient();
 
@@ -76,6 +89,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (authResponse.success) {
         setUser(authResponse.user);
         setAuthToken(authResponse.token);
+        
+        // Handle enhanced session data
+        if (authResponse.sessionId) {
+          setSessionId(authResponse.sessionId);
+        }
+        if (authResponse.sessionExpiresAt) {
+          setSessionExpiresAt(authResponse.sessionExpiresAt);
+        }
+
+        // If this is a driver login, save the driver session
+        if (authResponse.user.role === 'DRIVER' && authResponse.sessionId) {
+          const driverSession = {
+            driverId: authResponse.user.driverId || authResponse.user.id,
+            sessionId: authResponse.sessionId,
+            busId: authResponse.user.busId || '',
+            routeId: authResponse.user.routeId || '',
+            isOnline: false,
+          };
+          await AsyncStorage.setItem('@driver_session', JSON.stringify(driverSession));
+        }
       } else {
         throw new Error(authResponse.message || 'Login failed');
       }
@@ -98,6 +131,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (authResponse.token) {
           setUser(authResponse.user);
           setAuthToken(authResponse.token);
+          
+          // Handle enhanced session data
+          if (authResponse.sessionId) {
+            setSessionId(authResponse.sessionId);
+          }
+          if (authResponse.sessionExpiresAt) {
+            setSessionExpiresAt(authResponse.sessionExpiresAt);
+          }
+
+          // If this is a driver registration, save the driver session
+          if (authResponse.user.role === 'DRIVER' && authResponse.sessionId) {
+            const driverSession = {
+              driverId: authResponse.user.driverId || authResponse.user.id,
+              sessionId: authResponse.sessionId,
+              busId: authResponse.user.busId || '',
+              routeId: authResponse.user.routeId || '',
+              isOnline: false,
+            };
+            await AsyncStorage.setItem('@driver_session', JSON.stringify(driverSession));
+          }
         } else {
           // Registration successful but need to login
           console.log('Registration successful:', authResponse.message);
@@ -119,14 +172,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      await apiClient.logout();
+      // If we have a session ID, properly logout from backend
+      if (sessionId) {
+        await apiClient.logoutDriver(sessionId);
+      } else {
+        await apiClient.logout();
+      }
+      
+      // Clear driver session from storage
+      await AsyncStorage.removeItem('@driver_session');
+      
       setUser(null);
       setAuthToken(null);
+      setSessionId(null);
+      setSessionExpiresAt(null);
     } catch (error) {
       console.error('Logout error:', error);
       // Even if logout fails, clear local state
       setUser(null);
       setAuthToken(null);
+      setSessionId(null);
+      setSessionExpiresAt(null);
     }
   };
 
@@ -149,9 +215,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const isTokenValid = (): boolean => {
     if (!authToken) return false;
     
+    // Check session expiration first
+    if (isSessionExpired()) return false;
+    
     // Basic token format validation
     const parts = authToken.split('.');
     return parts.length === 3;
+  };
+
+  const validateSession = async (): Promise<boolean> => {
+    if (!sessionId) return false;
+    
+    try {
+      const response = await apiClient.validateSession(sessionId);
+      return response.success;
+    } catch (error) {
+      console.error('Session validation error:', error);
+      return false;
+    }
+  };
+
+  const isSessionExpired = (): boolean => {
+    if (!sessionExpiresAt) return false;
+    return Date.now() > sessionExpiresAt;
   };
 
   const updateUser = async (userData: Partial<User>) => {
@@ -182,14 +268,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const hasPermission = (permission: string): boolean => {
     if (!user) return false;
     
-    // Basic role-based permissions
-    switch (permission) {
-      case 'admin':
-        return user.role === 'ADMIN';
+    // Basic permission checks
+    switch (permission.toLowerCase()) {
       case 'driver':
-        return user.role === 'DRIVER' || user.role === 'ADMIN';
+        return user.role === 'DRIVER';
       case 'passenger':
-        return user.role === 'PASSENGER' || user.role === 'ADMIN';
+        return user.role === 'PASSENGER';
       default:
         return false;
     }
@@ -200,11 +284,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     isLoading,
     isAuthenticated: !!user && !!authToken,
     authToken,
+    sessionId,
+    sessionExpiresAt,
     login,
     register,
     logout,
     refreshToken,
     isTokenValid,
+    validateSession,
+    isSessionExpired,
     updateUser,
     hasPermission,
   };

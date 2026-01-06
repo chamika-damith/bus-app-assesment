@@ -59,17 +59,7 @@ export default function BusStopPage() {
       console.error('Error loading bus stops:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load bus stops';
       setError(errorMessage);
-      
-      // Fallback to demo data
-      setBusStops([
-        {
-          id: 'demo',
-          name: '⚠️ Demo',
-          destination: 'Backend Connection Failed',
-          eta: 'N/A',
-          status: 'Cancelled'
-        }
-      ]);
+      setBusStops([]);
     } finally {
       setLoading(false);
     }

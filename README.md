@@ -7,7 +7,6 @@ A comprehensive bus tracking application built with React Native and Expo, featu
 ### 🚌 Multi-Role Support
 - **Passengers**: Track buses in real-time, find routes, report crowd levels
 - **Drivers**: Automatic location tracking, route management, trip history
-- **Admins**: System monitoring, user management, analytics (web-based)
 
 ### 📱 Core Functionality
 - Real-time bus location tracking
@@ -61,7 +60,6 @@ bun run start
 
 ```
 ├── app/                    # App screens and routing
-│   ├── admin/             # Admin dashboard screens
 │   ├── auth/              # Authentication flow
 │   │   ├── role-selection.tsx
 │   │   ├── ui-preference.tsx
@@ -86,7 +84,6 @@ bun run start
 
 For testing purposes, use these demo credentials:
 
-- **Admin**: admin@demo.com / password
 - **Driver**: driver@demo.com / password  
 - **Passenger**: passenger@demo.com / password
 
@@ -106,18 +103,12 @@ For testing purposes, use these demo credentials:
 - **Trip History**: Detailed logs of completed trips
 - **Performance Stats**: Daily/weekly driving statistics
 
-### Admin Features (Web-based)
-- **System Overview**: Monitor all buses and routes
-- **User Management**: Manage drivers and passengers
-- **Analytics**: Usage statistics and performance metrics
-- **Route Management**: Configure routes and stops
-
 ## App Flow
 
 ### Authentication Flow
 1. **Splash Screen** (3s) → Auto-detects language and theme
 2. **Welcome Screen** → Google Sign-in with language selection
-3. **Role Selection** → Choose Passenger, Driver, or Admin
+3. **Role Selection** → Choose Passenger or Driver
 4. **UI Preference** (Passengers) → Simple vs Modern mode
 5. **Route Selection** (Drivers) → Assign driving route
 

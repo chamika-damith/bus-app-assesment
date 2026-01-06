@@ -29,14 +29,6 @@ const roles = [
     description: 'I drive a bus',
     next_screen: '/auth/route-selection',
   },
-  {
-    role_id: 'ADMIN' as UserRole,
-    role_name: 'Administrator',
-    icon: Shield,
-    description: 'I manage the system',
-    next_screen: '/admin',
-    note: 'Web redirect prompt',
-  },
 ];
 
 export default function RoleSelection() {
@@ -47,24 +39,6 @@ export default function RoleSelection() {
   const handleContinue = async () => {
     if (!selectedRole) {
       Alert.alert('Error', 'Please select a role to continue');
-      return;
-    }
-
-    if (selectedRole === 'ADMIN') {
-      Alert.alert(
-        'Admin Access',
-        'Admin features are available on the web dashboard. Would you like to continue as a passenger instead?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Continue as Passenger', 
-            onPress: () => {
-              setSelectedRole('PASSENGER');
-              proceedWithRole('PASSENGER');
-            }
-          },
-        ]
-      );
       return;
     }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,13 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Clock, MapPin, X } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
 interface BusStop {
   id: string;
@@ -19,61 +21,29 @@ interface BusStop {
   status: 'current' | 'next' | 'future' | 'passed';
 }
 
-const mockBusStops: BusStop[] = [
-  {
-    id: '1',
-    name: 'Nalam Bus Stop',
-    time: 'Next arrival: Today / 8:00',
-    status: 'current'
-  },
-  {
-    id: '2',
-    name: 'Full Results',
-    time: 'Next arrival: Today / 8:10',
-    status: 'next'
-  },
-  {
-    id: '3',
-    name: 'Galabeddeatta',
-    time: 'Next arrival: Today / 8:20',
-    status: 'future'
-  },
-  {
-    id: '4',
-    name: 'Pitipana Junction',
-    time: 'Next arrival: Today / 8:35',
-    status: 'future'
-  },
-  {
-    id: '5',
-    name: 'Inimalanda',
-    time: 'Next arrival: Today / 8:45',
-    status: 'future'
-  },
-  {
-    id: '6',
-    name: 'Homagama Bus Stand',
-    time: 'Next arrival: Today / 8:50',
-    status: 'future'
-  },
-  {
-    id: '7',
-    name: 'Klanches',
-    time: 'Next arrival: Today / 9:30',
-    status: 'future'
-  },
-  {
-    id: '8',
-    name: 'Maharagama',
-    time: 'Next arrival: Today / 9:30',
-    status: 'future'
-  }
-];
-
 export default function RouteDetails() {
   const params = useLocalSearchParams();
   const routeId = params.routeId as string;
-  const routeNumber = '129'; // Mock route number
+  const routeNumber = params.routeNumber as string || routeId;
+  const [busStops, setBusStops] = useState<BusStop[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRouteDetails();
+  }, [routeId]);
+
+  const loadRouteDetails = async () => {
+    try {
+      setLoading(true);
+      // In a real app, fetch route details from backend
+      // For now, show message that data needs to be loaded
+      setBusStops([]);
+    } catch (error) {
+      console.error('Failed to load route details:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStopStatusStyle = (status: string) => {
     switch (status) {
@@ -114,21 +84,30 @@ export default function RouteDetails() {
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* Route Info Header */}
-        <View style={styles.routeInfoHeader}>
-          <Text style={styles.routeTitle}>Nalam Bus Stop</Text>
-          <Text style={styles.routeSubtitle}>Next arrival: Today / 8:00</Text>
-        </View>
+        {loading ? (
+          <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
+        ) : busStops.length > 0 ? (
+          <View style={styles.routeInfoHeader}>
+            <Text style={styles.routeTitle}>{routeNumber} Bus Route</Text>
+            <Text style={styles.routeSubtitle}>{busStops.length} stops</Text>
+          </View>
+        ) : (
+          <View style={styles.routeInfoHeader}>
+            <Text style={styles.routeTitle}>{routeNumber} Bus Route</Text>
+            <Text style={styles.routeSubtitle}>No route data available</Text>
+          </View>
+        )}
 
         {/* Bus Stops Timeline */}
         <View style={styles.timelineContainer}>
-          {mockBusStops.map((stop, index) => (
+          {busStops.map((stop, index) => (
             <View key={stop.id} style={styles.timelineItem}>
               <View style={styles.timelineLeft}>
                 <View style={[
                   styles.timelineDot,
                   { backgroundColor: getStopStatusColor(stop.status) }
                 ]} />
-                {index < mockBusStops.length - 1 && (
+                {index < busStops.length - 1 && (
                   <View style={styles.timelineLine} />
                 )}
               </View>
@@ -327,5 +306,22 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginBottom: 20,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 8,
+    textAlign: 'center',
   },
 });

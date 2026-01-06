@@ -20,7 +20,6 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="splash" options={{ headerShown: false }} />
-          <Stack.Screen name="admin" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="driver" options={{ headerShown: false }} />
           <Stack.Screen name="passenger" options={{ headerShown: false }} />

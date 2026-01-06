@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,21 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Search, Mic, Clock, MapPin, Star } from 'lucide-react-native';
+import { Search, Mic, Clock, MapPin, Star, Navigation } from 'lucide-react-native';
 import { Input } from '../../components/Input';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
+
+interface RouteInfo {
+  routeId: string;
+  busId: string;
+  driverId: string;
+  driverName: string;
+  isActive: boolean;
+}
 
 const categories = [
   { id: 'schools', name: 'Schools', icon: '🏫' },
@@ -19,33 +29,84 @@ const categories = [
   { id: 'transport', name: 'Transport Hubs', icon: '🚉' },
 ];
 
-const recentSearches = [
-  'Colombo Fort Railway Station',
-  'University of Colombo',
-  'Bandaranaike International Airport',
-  'Galle Face Green',
-  'National Hospital of Sri Lanka',
-];
-
-const popularDestinations = [
-  { name: 'Colombo Fort', category: 'Transport Hub' },
-  { name: 'Pettah Market', category: 'Shopping' },
-  { name: 'Mount Lavinia Beach', category: 'Recreation' },
-  { name: 'Colombo University', category: 'Education' },
-];
-
 export default function DestinationSearch() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<RouteInfo[]>([]);
+  const [filteredRoutes, setFilteredRoutes] = useState<RouteInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [recentSearches] = useState<string[]>([]);
+  const apiClient = getAPIClient();
 
-  const handleSearch = (query: string) => {
-    if (query.trim()) {
-      router.push(`/passenger/routes-buses?destination=${encodeURIComponent(query)}`);
+  useEffect(() => {
+    loadRoutes();
+  }, []);
+
+  useEffect(() => {
+    filterRoutes();
+  }, [searchQuery, routes]);
+
+  const loadRoutes = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch all registered drivers (not just live/active ones)
+      const drivers = await apiClient.getDrivers();
+      
+      // Extract unique routes from all drivers
+      const routeMap = new Map<string, RouteInfo>();
+      drivers.forEach(driver => {
+        const routeId = driver.routeId || driver.route || 'Unknown Route';
+        if (!routeMap.has(routeId)) {
+          routeMap.set(routeId, {
+            routeId: routeId,
+            busId: driver.busId || driver.vehicleNumber || 'N/A',
+            driverId: driver.driverId || driver._id || driver.id,
+            driverName: driver.name,
+            isActive: driver.isActive || false,
+          });
+        }
+      });
+      
+      const routeList = Array.from(routeMap.values());
+      setRoutes(routeList);
+      setFilteredRoutes(routeList);
+    } catch (error) {
+      console.error('Error loading routes:', error);
+      setRoutes([]);
+      setFilteredRoutes([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const filterRoutes = () => {
+    if (!searchQuery.trim()) {
+      setFilteredRoutes(routes);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = routes.filter(route => 
+      route.routeId.toLowerCase().includes(query) ||
+      route.driverName.toLowerCase().includes(query) ||
+      route.busId.toLowerCase().includes(query)
+    );
+    setFilteredRoutes(filtered);
+  };
+
+  const handleSearch = (query: string) => {
+    if (query.trim()) {
+      setSearchQuery(query);
+    }
+  };
+
+  const handleRouteClick = (route: RouteInfo) => {
+    router.push(`/passenger/route-details?routeNumber=${encodeURIComponent(route.routeId)}`);
+  };
+
   const handleVoiceSearch = () => {
-    // Mock voice search - replace with actual implementation
+    // TODO: Implement voice search with speech recognition API
     console.log('Voice search activated');
   };
 
@@ -98,6 +159,49 @@ export default function DestinationSearch() {
             ))}
           </View>
         </View>
+
+        {/* Available Routes */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Available Bus Routes</Text>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.loadingText}>Loading routes...</Text>
+            </View>
+          ) : filteredRoutes.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Navigation size={48} color={Colors.gray[300]} />
+              <Text style={styles.emptyTitle}>No routes available</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery ? 'Try a different search term' : 'No active buses at the moment'}
+              </Text>
+            </View>
+          ) : (
+            filteredRoutes.map((route, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.routeCard}
+                onPress={() => handleRouteClick(route)}
+              >
+                <View style={styles.routeIcon}>
+                  <Navigation size={20} color={Colors.primary} />
+                </View>
+                <View style={styles.routeInfo}>
+                  <Text style={styles.routeNumber}>{route.routeId}</Text>
+                  <Text style={styles.routeDriver}>Driver: {route.driverName}</Text>
+                  <View style={styles.routeStatus}>
+                    <View style={[styles.statusDot, route.isActive && styles.statusDotActive]} />
+                    <Text style={[styles.statusLabel, route.isActive && styles.statusLabelActive]}>
+                      {route.isActive ? 'Active' : 'Inactive'}
+                    </Text>
+                  </View>
+                </View>
+                <MapPin size={20} color={Colors.gray[400]} />
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+        
         {/* Recent Searches */}
         {recentSearches.length > 0 && (
           <View style={styles.section}>
@@ -114,24 +218,6 @@ export default function DestinationSearch() {
             ))}
           </View>
         )}
-
-        {/* Popular Destinations */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Popular Destinations</Text>
-          {popularDestinations.map((destination, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.listItem}
-              onPress={() => handleSearch(destination.name)}
-            >
-              <Star size={16} color={Colors.warning} />
-              <View style={styles.destinationInfo}>
-                <Text style={styles.listItemText}>{destination.name}</Text>
-                <Text style={styles.categoryText}>{destination.category}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -249,5 +335,91 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.secondary,
     marginTop: 2,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginLeft: 12,
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+  },
+  routeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  routeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  routeInfo: {
+    flex: 1,
+  },
+  routeNumber: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  routeDriver: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    marginBottom: 6,
+  },
+  routeStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.gray[400],
+    marginRight: 6,
+  },
+  statusDotActive: {
+    backgroundColor: Colors.success,
+  },
+  statusLabel: {
+    fontSize: 12,
+    color: Colors.gray[600],
+  },
+  statusLabelActive: {
+    color: Colors.success,
+    fontWeight: '500',
   },
 });
