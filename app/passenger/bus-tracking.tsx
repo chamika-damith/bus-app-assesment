@@ -123,33 +123,33 @@ export default function BusTracking() {
           throw new Error(busLocationData.message || 'Bus not found or offline');
         }
       } else {
-        // Get live buses if no specific busId provided
-        const API_BASE_URL = 'http://192.168.204.176:5001/api';
-        const response = await fetch(`${API_BASE_URL}/gps/buses/live`);
-        const liveBusesData = await response.json();
+        // Get online drivers from driver list API
+        const drivers = await apiClient.getDrivers();
+        const onlineDrivers = drivers.filter(d => d.isOnline || d.isActive);
         
-        if (liveBusesData.success && liveBusesData.data && liveBusesData.data.length > 0) {
-          const firstBus = liveBusesData.data[0];
-          const routeNumber = firstBus.busId ? firstBus.busId.split('_')[1] || 'Unknown' : 'Unknown';
+        if (onlineDrivers.length > 0) {
+          const firstDriver = onlineDrivers[0];
+          const routeNumber = firstDriver.routeId || firstDriver.route || 'Unknown';
+          
+          // Use last known location or default Colombo location
+          const latitude = firstDriver.location?.latitude || 6.9271;
+          const longitude = firstDriver.location?.longitude || 79.8612;
           
           setBusInfo({
-            id: firstBus.busId || 'unknown',
+            id: firstDriver.busId || firstDriver.vehicleNumber || 'unknown',
             routeNumber: routeNumber,
-            routeName: `Route ${firstBus.routeId || routeNumber}`,
-            arrivalTime: calculateETA(
-              firstBus.latitude || firstBus.location?.latitude || 0, 
-              firstBus.longitude || firstBus.location?.longitude || 0, 
-              firstBus.speed || firstBus.location?.speed || 0
-            ),
-            isLive: firstBus.isOnline !== false,
+            routeName: `Route ${routeNumber}`,
+            arrivalTime: calculateETA(latitude, longitude, 30), // Default 30 km/h
+            isLive: true,
             crowdLevel: 'medium',
             distanceToUser: 0,
             currentLocation: {
-              latitude: firstBus.latitude || firstBus.location?.latitude || 0,
-              longitude: firstBus.longitude || firstBus.location?.longitude || 0,
+              latitude: latitude,
+              longitude: longitude,
             },
-            lastUpdate: firstBus.lastUpdate || firstBus.lastSeen || 'Just now',
-            speed: firstBus.speed || firstBus.location?.speed || 0,
+            lastUpdate: firstDriver.lastSeen ? new Date(firstDriver.lastSeen).toLocaleString() : 'Just now',
+            driverName: firstDriver.name,
+            speed: 0,
           });
         } else {
           throw new Error('No active buses found');

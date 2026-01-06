@@ -119,6 +119,7 @@ export const API_ENDPOINTS = {
     CREATE: '/api/users',
     UPDATE: (userId: string) => `/api/users/${userId}`,
     DELETE: (userId: string) => `/api/users/${userId}`,
+    LOGIN: '/api/users/login',
   },
   
   // Driver Management

@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface DriverSession {
   driverId: string;
+  mongoId?: string;
   sessionId: string;
   busId: string;
   routeId: string;
@@ -84,8 +85,13 @@ export default function DriverDashboard() {
     try {
       const newOnlineStatus = !isOnline;
       
-      // Update status on backend
-      await apiClient.updateDriverStatus(session.driverId, session.sessionId, newOnlineStatus);
+      // Update status on backend (pass mongoId if available)
+      await apiClient.updateDriverStatus(
+        session.driverId, 
+        session.sessionId, 
+        newOnlineStatus,
+        session.mongoId
+      );
       
       // Update local state
       setIsOnline(newOnlineStatus);

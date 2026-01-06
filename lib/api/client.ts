@@ -78,9 +78,13 @@ export class BusTrackingAPIClient implements APIClient {
 
       // Try driver login using email and password
       try {
+        // Get device ID for session management
+        const deviceId = await DeviceManager.getDeviceId();
+        
         const driverLoginData = {
           email: validatedCredentials.email,
           password: validatedCredentials.password,
+          deviceId: deviceId,
         };
 
         const response = await this.httpClient.post(API_ENDPOINTS.AUTH.LOGIN, driverLoginData);
@@ -118,48 +122,45 @@ export class BusTrackingAPIClient implements APIClient {
       } catch (driverLoginError) {
         console.error('Driver login failed:', driverLoginError);
 
-        // If it's a 401 error, it means invalid credentials
-        if (driverLoginError instanceof HTTPError && driverLoginError.status === 401) {
-          throw new Error('Invalid email or password');
-        }
-
-        // For other errors, continue to try regular user login
-        console.log('Driver login failed, trying regular user login');
+        // Continue to try regular user login for all errors (including 401)
+        // Don't throw here - passenger might have same email
+        console.log('Driver login failed, trying passenger login');
       }
 
       // For regular users (passengers), validate against backend users
       try {
-        // Get all users from backend to validate credentials
-        const users = await this.getUsers();
-
-        // Find user with matching email
-        const user = users.find(u => u.email === validatedCredentials.email);
-
-        if (!user) {
-          throw new Error('Invalid email or password');
-        }
-
-        // Note: In a real implementation, password should be validated on backend
-        // For now, we'll create a proper authenticated session
-        const authResponse: AuthResponse = {
-          success: true,
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            role: user.role || 'PASSENGER',
-            createdAt: user.createdAt,
-          },
-          token: 'user_session_' + user.id + '_' + Date.now(),
-          message: 'Login successful',
+        const passengerLoginData = {
+          email: validatedCredentials.email,
+          password: validatedCredentials.password,
         };
 
-        // Store tokens and user data
-        await TokenManager.setTokens(authResponse.token);
-        await UserDataManager.setUserData(authResponse.user);
+        const response = await this.httpClient.post(API_ENDPOINTS.USERS.LOGIN, passengerLoginData);
 
-        return authResponse;
+        if (response.data.success && response.data.data) {
+          const userData = response.data.data;
+
+          const authResponse: AuthResponse = {
+            success: true,
+            user: {
+              id: userData._id || userData.id,
+              name: userData.name,
+              email: userData.email,
+              phone: userData.telephone || userData.phone,
+              role: 'PASSENGER',
+              createdAt: userData.createdAt,
+            },
+            token: 'user_session_' + (userData._id || userData.id) + '_' + Date.now(),
+            message: response.data.message || 'Login successful',
+          };
+
+          // Store tokens and user data
+          await TokenManager.setTokens(authResponse.token);
+          await UserDataManager.setUserData(authResponse.user);
+
+          return authResponse;
+        }
+
+        throw new Error('Login failed');
       } catch (error) {
         throw new Error('Invalid email or password');
       }
@@ -331,12 +332,13 @@ export class BusTrackingAPIClient implements APIClient {
   /**
    * Update driver online/offline status
    */
-  async updateDriverStatus(driverId: string, sessionId: string, isOnline: boolean): Promise<void> {
+  async updateDriverStatus(driverId: string, sessionId: string, isOnline: boolean, mongoId?: string): Promise<void> {
     try {
       await this.httpClient.post(API_ENDPOINTS.AUTH.UPDATE_STATUS, {
         driverId,
         sessionId,
         isOnline,
+        mongoId,
       });
     } catch (error) {
       if (error instanceof HTTPError) {
@@ -643,7 +645,10 @@ export class BusTrackingAPIClient implements APIClient {
         licenseNumber: driver.licenseNumber,
         busId: driver.busId,
         routeId: driver.routeId,
+        route: driver.route || driver.routeId,
+        vehicleNumber: driver.vehicleNumber || driver.busId,
         isActive: driver.isActive,
+        isOnline: driver.isOnline, // Include isOnline from MongoDB
         lastSeen: driver.lastSeen,
         location: driver.location,
       }));

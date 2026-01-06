@@ -102,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (authResponse.user.role === 'DRIVER' && authResponse.sessionId) {
           const driverSession = {
             driverId: authResponse.user.driverId || authResponse.user.id,
+            mongoId: authResponse.user.mongoId || authResponse.user.id,
             sessionId: authResponse.sessionId,
             busId: authResponse.user.busId || '',
             routeId: authResponse.user.routeId || '',
@@ -144,6 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           if (authResponse.user.role === 'DRIVER' && authResponse.sessionId) {
             const driverSession = {
               driverId: authResponse.user.driverId || authResponse.user.id,
+              mongoId: authResponse.user.mongoId || authResponse.user.id,
               sessionId: authResponse.sessionId,
               busId: authResponse.user.busId || '',
               routeId: authResponse.user.routeId || '',

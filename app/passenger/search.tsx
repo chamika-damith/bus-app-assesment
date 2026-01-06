@@ -53,9 +53,12 @@ export default function DestinationSearch() {
       // Fetch all registered drivers (not just live/active ones)
       const drivers = await apiClient.getDrivers();
       
-      // Extract unique routes from all drivers
+      // Filter only online/active drivers
+      const onlineDrivers = drivers.filter(driver => driver.isOnline || driver.isActive);
+      
+      // Extract unique routes from online drivers
       const routeMap = new Map<string, RouteInfo>();
-      drivers.forEach(driver => {
+      onlineDrivers.forEach(driver => {
         const routeId = driver.routeId || driver.route || 'Unknown Route';
         if (!routeMap.has(routeId)) {
           routeMap.set(routeId, {
@@ -63,7 +66,7 @@ export default function DestinationSearch() {
             busId: driver.busId || driver.vehicleNumber || 'N/A',
             driverId: driver.driverId || driver._id || driver.id,
             driverName: driver.name,
-            isActive: driver.isActive || false,
+            isActive: driver.isActive || driver.isOnline || false,
           });
         }
       });
