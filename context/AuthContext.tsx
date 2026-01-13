@@ -1,8 +1,19 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAPIClient, User, LoginCredentials, RegisterData, TokenManager, UserDataManager } from '../lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, googleProvider, signInWithPopup } from '../lib/firebase/config';
+import { Platform } from 'react-native';
 
 export type UserRole = 'DRIVER' | 'PASSENGER';
+
+// Google User Data interface for authentication
+export interface GoogleUserData {
+  email: string;
+  name: string;
+  photoURL: string | null;
+  uid: string;
+  idToken: string;
+}
 
 export interface AuthContextType {
   user: User | null;
@@ -16,6 +27,7 @@ export interface AuthContextType {
   
   // Core auth methods
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (googleUserData?: GoogleUserData) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   
@@ -120,7 +132,135 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsLoading(false);
     }
   };
+  const loginWithGoogle = async (externalGoogleUserData?: GoogleUserData) => {
+    setIsLoading(true);
+    try {
+      let googleUserData: GoogleUserData | undefined;
+      let idToken: string;
+      
+      if (externalGoogleUserData) {
+        // Mobile flow: Google user data passed from expo-auth-session
+        googleUserData = externalGoogleUserData;
+        idToken = externalGoogleUserData.idToken;
+      } else if (Platform.OS === 'web') {
+        // Web: Use Firebase signInWithPopup
+        const result = await signInWithPopup(auth, googleProvider);
+        const firebaseUser = result.user;
+        
+        if (!firebaseUser || !firebaseUser.email) {
+          throw new Error('Google sign-in failed - no user data');
+        }
 
+        // Get Firebase ID token
+        idToken = await firebaseUser.getIdToken();
+        
+        // Extract user information
+        googleUserData = {
+          email: firebaseUser.email,
+          name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+          photoURL: firebaseUser.photoURL,
+          uid: firebaseUser.uid,
+          idToken: idToken,
+        };
+      } else {
+        // Mobile without external data - this shouldn't happen if using the hook properly
+        throw new Error('Mobile Google Sign-In requires using the useGoogleAuth hook');
+      }
+
+      if (!googleUserData || !googleUserData.email) {
+        throw new Error('Failed to get user data from Google');
+      }
+
+      idToken = googleUserData.idToken;
+
+      // Try to login with existing account first
+      try {
+        // Create a special identifier for Google users
+        const googlePassword = `google_${googleUserData.uid}_${idToken.substring(0, 20)}`;
+        
+        const loginResponse = await apiClient.login({
+          email: googleUserData.email,
+          password: googlePassword,
+        });
+
+        if (loginResponse.success) {
+          setUser(loginResponse.user);
+          setAuthToken(loginResponse.token);
+          
+          if (loginResponse.sessionId) {
+            setSessionId(loginResponse.sessionId);
+          }
+          if (loginResponse.sessionExpiresAt) {
+            setSessionExpiresAt(loginResponse.sessionExpiresAt);
+          }
+          return;
+        }
+      } catch (loginError) {
+        // User doesn't exist, auto-register as PASSENGER
+        console.log('User not found, auto-registering as passenger...');
+      }
+
+      // Auto-register user as PASSENGER
+      const googlePassword = `google_${googleUserData.uid}_${idToken.substring(0, 20)}`;
+      
+      const registerData: RegisterData = {
+        email: googleUserData.email,
+        password: googlePassword,
+        name: googleUserData.name,
+        phone: '', // Can be added later
+        role: 'PASSENGER',
+        uiMode: 'MODERN',
+      };
+
+      const registerResponse = await apiClient.register(registerData);
+      
+      if (registerResponse.success) {
+        // After successful registration, login
+        if (registerResponse.token) {
+          setUser(registerResponse.user);
+          setAuthToken(registerResponse.token);
+          
+          if (registerResponse.sessionId) {
+            setSessionId(registerResponse.sessionId);
+          }
+          if (registerResponse.sessionExpiresAt) {
+            setSessionExpiresAt(registerResponse.sessionExpiresAt);
+          }
+        } else {
+          // If no token from registration, login again
+          const loginResponse = await apiClient.login({
+            email: googleUserData.email,
+            password: googlePassword,
+          });
+          
+          if (loginResponse.success) {
+            setUser(loginResponse.user);
+            setAuthToken(loginResponse.token);
+            
+            if (loginResponse.sessionId) {
+              setSessionId(loginResponse.sessionId);
+            }
+            if (loginResponse.sessionExpiresAt) {
+              setSessionExpiresAt(loginResponse.sessionExpiresAt);
+            }
+          }
+        }
+      } else {
+        throw new Error(registerResponse.message || 'Registration failed');
+      }
+    } catch (error: any) {
+      console.error('Google Sign-In error:', error);
+      // Handle specific Firebase errors
+      if (error.code === 'auth/popup-closed-by-user') {
+        throw new Error('Sign-in cancelled');
+      } else if (error.code === 'auth/popup-blocked') {
+        throw new Error('Pop-up blocked. Please allow pop-ups for this site.');
+      }
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const register = async (userData: RegisterData) => {
     setIsLoading(true);
     try {
@@ -289,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     sessionId,
     sessionExpiresAt,
     login,
+    loginWithGoogle,
     register,
     logout,
     refreshToken,

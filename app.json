@@ -70,6 +70,12 @@
       },
       "eas": {
         "projectId": "your-project-id"
+      },
+      "googleAuth": {
+        "webClientId": "135721186146-h6gtdbff572112jipu5ejf4aevst7gob.apps.googleusercontent.com",
+        "androidClientId": "",
+        "iosClientId": "",
+        "expoClientId": "135721186146-h6gtdbff572112jipu5ejf4aevst7gob.apps.googleusercontent.com"
       }
     }
   }
