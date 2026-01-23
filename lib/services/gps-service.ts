@@ -1,11 +1,36 @@
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as SQLite from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getAPIClient } from '../api/client';
 import { LocationUpdate } from '../api/types';
+
+// Platform-specific imports
+let SQLite: any;
+let TaskManager: any;
+let BackgroundFetch: any;
+
+if (Platform.OS !== 'web') {
+  SQLite = require('expo-sqlite');
+  TaskManager = require('expo-task-manager');
+  BackgroundFetch = require('expo-background-fetch');
+} else {
+  // Web fallbacks
+  SQLite = {
+    openDatabaseAsync: () => Promise.resolve(null),
+  };
+  TaskManager = {
+    defineTask: () => {},
+    isTaskRegisteredAsync: () => Promise.resolve(false),
+  };
+  BackgroundFetch = {
+    registerTaskAsync: () => Promise.resolve(),
+    unregisterTaskAsync: () => Promise.resolve(),
+    BackgroundFetchResult: {
+      NewData: 'newData',
+      Failed: 'failed',
+    },
+  };
+}
 
 // ==================== CONSTANTS ====================
 
@@ -66,9 +91,17 @@ export interface GPSServiceStatus {
 // ==================== DATABASE SETUP ====================
 
 class LocationDatabase {
-  private db: SQLite.SQLiteDatabase | null = null;
+  private db: any = null;
+  private isWeb = Platform.OS === 'web';
+  private webStorage: any[] = [];
 
   async initialize(): Promise<void> {
+    if (this.isWeb) {
+      // Web: Use in-memory storage
+      this.webStorage = [];
+      return;
+    }
+
     try {
       this.db = await SQLite.openDatabaseAsync('gps_tracking.db');
       
@@ -101,6 +134,11 @@ class LocationDatabase {
   }
 
   async addQueuedLocation(location: QueuedLocationUpdate): Promise<void> {
+    if (this.isWeb) {
+      this.webStorage.push(location);
+      return;
+    }
+
     if (!this.db) throw new Error('Database not initialized');
     
     await this.db.runAsync(
@@ -127,6 +165,10 @@ class LocationDatabase {
   }
 
   async getQueuedLocations(limit: number = 50): Promise<QueuedLocationUpdate[]> {
+    if (this.isWeb) {
+      return this.webStorage.slice(0, limit);
+    }
+
     if (!this.db) throw new Error('Database not initialized');
     
     const result = await this.db.getAllAsync(
@@ -153,11 +195,24 @@ class LocationDatabase {
   }
 
   async removeQueuedLocation(id: string): Promise<void> {
+    if (this.isWeb) {
+      this.webStorage = this.webStorage.filter(item => item.id !== id);
+      return;
+    }
+
     if (!this.db) throw new Error('Database not initialized');
     await this.db.runAsync('DELETE FROM queued_locations WHERE id = ?', [id]);
   }
 
   async updateRetryCount(id: string, retryCount: number): Promise<void> {
+    if (this.isWeb) {
+      const item = this.webStorage.find(item => item.id === id);
+      if (item) {
+        item.retryCount = retryCount;
+      }
+      return;
+    }
+
     if (!this.db) throw new Error('Database not initialized');
     await this.db.runAsync(
       'UPDATE queued_locations SET retryCount = ? WHERE id = ?',
@@ -166,14 +221,24 @@ class LocationDatabase {
   }
 
   async getQueuedCount(): Promise<number> {
+    if (this.isWeb) {
+      return this.webStorage.length;
+    }
+
     if (!this.db) throw new Error('Database not initialized');
     const result = await this.db.getFirstAsync('SELECT COUNT(*) as count FROM queued_locations');
     return (result as any)?.count || 0;
   }
 
   async clearOldEntries(olderThanMs: number): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
     const cutoffTime = Date.now() - olderThanMs;
+    
+    if (this.isWeb) {
+      this.webStorage = this.webStorage.filter(item => item.createdAt >= cutoffTime);
+      return;
+    }
+
+    if (!this.db) throw new Error('Database not initialized');
     await this.db.runAsync('DELETE FROM queued_locations WHERE createdAt < ?', [cutoffTime]);
   }
 }
@@ -258,6 +323,12 @@ export class GPSService {
   }
 
   private async setupBackgroundTasks(): Promise<void> {
+    if (Platform.OS === 'web') {
+      // Web doesn't support background tasks
+      console.log('Background tasks not supported on web');
+      return;
+    }
+
     try {
       // Define background location task
       TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
@@ -324,18 +395,20 @@ export class GPSService {
         (location) => this.processLocationUpdate(location)
       );
 
-      // Start background location tracking if permission granted
-      const hasBackgroundPermission = await this.hasBackgroundLocationPermission();
-      if (hasBackgroundPermission) {
-        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-          accuracy: Location.Accuracy.High,
-          timeInterval: updateInterval,
-          distanceInterval: 10,
-          foregroundService: {
-            notificationTitle: 'TransLink GPS Tracking',
-            notificationBody: 'Broadcasting your location to passengers',
-          },
-        });
+      // Start background location tracking if permission granted (mobile only)
+      if (Platform.OS !== 'web') {
+        const hasBackgroundPermission = await this.hasBackgroundLocationPermission();
+        if (hasBackgroundPermission) {
+          await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+            accuracy: Location.Accuracy.High,
+            timeInterval: updateInterval,
+            distanceInterval: 10,
+            foregroundService: {
+              notificationTitle: 'TransLink GPS Tracking',
+              notificationBody: 'Broadcasting your location to passengers',
+            },
+          });
+        }
       }
 
       this.status.isTracking = true;
@@ -356,10 +429,12 @@ export class GPSService {
         this.locationSubscription = null;
       }
 
-      // Stop background location updates
-      const isTaskRunning = await TaskManager.isTaskRegisteredAsync(BACKGROUND_LOCATION_TASK);
-      if (isTaskRunning) {
-        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      // Stop background location updates (mobile only)
+      if (Platform.OS !== 'web') {
+        const isTaskRunning = await TaskManager.isTaskRegisteredAsync(BACKGROUND_LOCATION_TASK);
+        if (isTaskRunning) {
+          await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        }
       }
 
       this.status.isTracking = false;
@@ -696,11 +771,13 @@ export class GPSService {
       this.syncInterval = null;
     }
 
-    // Unregister background tasks
-    try {
-      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_SYNC_TASK);
-    } catch (error) {
-      console.warn('Failed to unregister background sync task:', error);
+    // Unregister background tasks (mobile only)
+    if (Platform.OS !== 'web') {
+      try {
+        await BackgroundFetch.unregisterTaskAsync(BACKGROUND_SYNC_TASK);
+      } catch (error) {
+        console.warn('Failed to unregister background sync task:', error);
+      }
     }
   }
 }

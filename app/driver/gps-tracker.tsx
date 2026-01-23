@@ -34,7 +34,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
-import { gpsService, GPSServiceStatus } from '../../lib/services/gps-service';
+import { gpsService, GPSServiceStatus } from '../../lib/services';
 
 interface LocationData {
   latitude: number;
