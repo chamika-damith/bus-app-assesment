@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Bell, BellOff, Users, MapPin, Clock, RefreshCw, Navigation } from 'lucide-react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { PlatformMapView, PlatformMarker } from '../../components/MapView';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
 import { getAPIClient } from '../../lib/api';
@@ -406,9 +406,8 @@ export default function BusTracking() {
 
       {/* Map Area */}
       <View style={styles.mapContainer}>
-        <MapView
+        <PlatformMapView
           style={styles.map}
-          provider={PROVIDER_GOOGLE}
           initialRegion={{
             latitude: busInfo?.currentLocation.latitude || 6.9271,
             longitude: busInfo?.currentLocation.longitude || 79.8612,
@@ -420,7 +419,7 @@ export default function BusTracking() {
           followsUserLocation={false}
         >
           {busInfo && (
-            <Marker
+            <PlatformMarker
               coordinate={{
                 latitude: busInfo.currentLocation.latitude,
                 longitude: busInfo.currentLocation.longitude,
@@ -430,7 +429,7 @@ export default function BusTracking() {
               pinColor={busInfo.isLive ? Colors.primary : Colors.gray[400]}
             />
           )}
-        </MapView>
+        </PlatformMapView>
         
         {/* Live indicator overlay */}
         {busInfo?.isLive && (

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { ArrowLeft, MapPin, List, Filter, RefreshCw, Users } from 'lucide-react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { PlatformMapView, PlatformMarker } from '../../components/MapView';
 import { Colors } from '../../constants/colors';
 import { getAPIClient } from '../../lib/api';
 
@@ -227,9 +227,8 @@ export default function NearbyBuses() {
       {/* Content */}
       {viewMode === 'map' ? (
         <View style={styles.mapContainer}>
-          <MapView
+          <PlatformMapView
             style={styles.map}
-            provider={PROVIDER_GOOGLE}
             initialRegion={{
               latitude: 6.9271, // Colombo center
               longitude: 79.8612,
@@ -240,7 +239,7 @@ export default function NearbyBuses() {
             showsMyLocationButton={true}
           >
             {sortedBuses.map((bus) => (
-              <Marker
+              <PlatformMarker
                 key={bus.id}
                 coordinate={{
                   latitude: bus.location.latitude,
@@ -249,10 +248,9 @@ export default function NearbyBuses() {
                 title={`Bus ${bus.routeNumber}`}
                 description={`${bus.direction} - ${bus.arrivalTime}`}
                 pinColor={Colors.primary}
-                onPress={() => handleBusPress(bus)}
               />
             ))}
-          </MapView>
+          </PlatformMapView>
           
           {/* Map overlay with bus count */}
           <View style={styles.mapOverlay}>
