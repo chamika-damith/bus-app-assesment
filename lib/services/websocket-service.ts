@@ -78,8 +78,11 @@ class WebSocketService {
   };
 
   constructor(config: Partial<WebSocketServiceConfig> = {}) {
+    const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://bustracking-backend-ehnq.onrender.com/api';
+    const wsUrl = baseUrl.replace('http', 'ws').replace('/api', '/ws');
+    
     this.config = {
-      url: 'ws://192.168.204.176:5001/ws', // Use localhost for development
+      url: wsUrl,
       reconnectInterval: 5000, // 5 seconds
       maxReconnectAttempts: 10,
       pingInterval: 30000, // 30 seconds

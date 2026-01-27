@@ -52,7 +52,7 @@ interface DriverSession {
   startTime: number;
 }
 
-const API_BASE_URL = 'http://192.168.204.176:5001/api/gps'; // Updated to match backend API
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') + '/api/gps' || 'https://bustracking-backend-ehnq.onrender.com/api/gps';
 
 export default function GPSTracker() {
   const { user } = useAuth();

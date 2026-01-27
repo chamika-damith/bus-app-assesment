@@ -114,7 +114,7 @@ export default function MapScreen() {
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
 
   // API configuration
-  const API_BASE_URL = 'http://192.168.204.176:5001/api'; // Replace with your server URL
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://bustracking-backend-ehnq.onrender.com/api';
 
   // Default region (Colombo, Sri Lanka)
   const defaultRegion: Region = {

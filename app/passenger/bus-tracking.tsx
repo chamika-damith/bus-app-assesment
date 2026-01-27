@@ -203,7 +203,7 @@ export default function BusTracking() {
 
       if (busId) {
         // Get specific bus location using the correct API endpoint
-        const API_BASE_URL = 'http://192.168.204.176:5001/api'; // Use same URL as map component
+        const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://bustracking-backend-ehnq.onrender.com/api';
         const response = await fetch(`${API_BASE_URL}/gps/bus/${busId}/location`);
         
         if (!response.ok) {
