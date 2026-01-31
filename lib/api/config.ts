@@ -8,7 +8,7 @@ import { ENV_CONFIG } from '../config/environment';
  */
 export const API_CONFIG = {
   // Base URL for the API
-  BASE_URL: ENV_CONFIG.API_URL,
+  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'https://bustracking-backend-ehnq.onrender.com',
   
   // Request timeout in milliseconds
   TIMEOUT: 15000, // 15 seconds
@@ -95,72 +95,72 @@ export const getEnvironmentConfig = () => {
 export const API_ENDPOINTS = {
   // Authentication
   AUTH: {
-    LOGIN: '/gps/driver/login', // Driver login endpoint
-    REGISTER_DRIVER: '/gps/driver/register',
-    REGISTER_USER: '/users',
-    REFRESH: '/auth/refresh', // Not implemented in backend yet
-    LOGOUT: '/gps/driver/logout', // Enhanced driver logout
-    VALIDATE_SESSION: '/gps/driver/validate-session', // Session validation
-    UPDATE_STATUS: '/gps/driver/status', // Driver online/offline status
-    GET_STATUS: (driverId: string) => `/gps/driver/status/${driverId}`, // Get driver status
+    LOGIN: '/api/gps/driver/login', // Driver login endpoint
+    REGISTER_DRIVER: '/api/gps/driver/register',
+    REGISTER_USER: '/api/users',
+    REFRESH: '/api/auth/refresh', // Not implemented in backend yet
+    LOGOUT: '/api/gps/driver/logout', // Enhanced driver logout
+    VALIDATE_SESSION: '/api/gps/driver/validate-session', // Session validation
+    UPDATE_STATUS: '/api/gps/driver/status', // Driver online/offline status
+    GET_STATUS: (driverId: string) => `/api/gps/driver/status/${driverId}`, // Get driver status
   },
   
   // GPS and Location
   GPS: {
-    UPDATE_LOCATION: '/gps/driver/location',
-    GET_DRIVER_LOCATION: (driverId: string) => `/gps/driver/location/${driverId}`,
-    GET_LIVE_BUSES: '/gps/buses/live',
-    GET_BUS_LOCATION: (busId: string) => `/gps/bus/${busId}/location`,
-    GET_BUS_HISTORY: (busId: string) => `/gps/bus/${busId}/history`,
+    UPDATE_LOCATION: '/api/gps/driver/location',
+    GET_DRIVER_LOCATION: (driverId: string) => `/api/gps/driver/location/${driverId}`,
+    GET_LIVE_BUSES: '/api/gps/buses/live',
+    GET_BUS_LOCATION: (busId: string) => `/api/gps/bus/${busId}/location`,
+    GET_BUS_HISTORY: (busId: string) => `/api/gps/bus/${busId}/history`,
   },
   
   // User Management
   USERS: {
-    GET_ALL: '/users',
-    GET_ONE: (userId: string) => `/users/${userId}`,
-    CREATE: '/users',
-    UPDATE: (userId: string) => `/users/${userId}`,
-    DELETE: (userId: string) => `/users/${userId}`,
-    LOGIN: '/users/login',
+    GET_ALL: '/api/users',
+    GET_ONE: (userId: string) => `/api/users/${userId}`,
+    CREATE: '/api/users',
+    UPDATE: (userId: string) => `/api/users/${userId}`,
+    DELETE: (userId: string) => `/api/users/${userId}`,
+    LOGIN: '/api/users/login',
   },
   
   // Driver Management
   DRIVERS: {
-    GET_ALL: '/gps/admin/drivers',
-    GET_DETAILS: (driverId: string) => `/gps/driver/details/${driverId}`,
-    REGISTER: '/gps/driver/register',
-    REMOVE: (driverId: string) => `/gps/admin/driver/${driverId}`,
-    GET_STATS: '/gps/admin/stats',
+    GET_ALL: '/api/gps/admin/drivers',
+    GET_DETAILS: (driverId: string) => `/api/gps/driver/details/${driverId}`,
+    REGISTER: '/api/gps/driver/register',
+    REMOVE: (driverId: string) => `/api/gps/admin/driver/${driverId}`,
+    GET_STATS: '/api/gps/admin/stats',
   },
   
   // Session Management (Admin)
   SESSIONS: {
-    GET_ACTIVE: '/gps/admin/sessions',
-    GET_STATS: '/gps/admin/session-stats',
-    FORCE_END: (sessionId: string) => `/gps/admin/session/${sessionId}`,
+    GET_ACTIVE: '/api/gps/admin/sessions',
+    GET_STATS: '/api/gps/admin/session-stats',
+    FORCE_END: (sessionId: string) => `/api/gps/admin/session/${sessionId}`,
   },
 
   // Routes
   ROUTES: {
-    GET_ALL: '/routes',
-    GET_ONE: (routeId: string) => `/routes/${routeId}`,
-    CREATE: '/routes',
-    UPDATE: (routeId: string) => `/routes/${routeId}`,
-    DELETE: (routeId: string) => `/routes/${routeId}`,
-    GET_NEARBY: '/routes/nearby',
-    GET_STATS: '/routes/stats',
+    GET_ALL: '/api/routes',
+    GET_ONE: (routeId: string) => `/api/routes/${routeId}`,
+    CREATE: '/api/routes',
+    UPDATE: (routeId: string) => `/api/routes/${routeId}`,
+    DELETE: (routeId: string) => `/api/routes/${routeId}`,
+    GET_NEARBY: '/api/routes/nearby',
+    GET_STATS: '/api/routes/stats',
   },
   
   // System
   SYSTEM: {
-    HEALTH: '/health',
-    VERSION: '/version',
+    HEALTH: '/api/health',
+    VERSION: '/api/version',
   },
   
   // Timetables (if needed)
   TIMETABLES: {
-    GET_ALL: '/timetables',
-    GET_ONE: (timetableId: string) => `/timetables/${timetableId}`,
+    GET_ALL: '/api/timetables',
+    GET_ONE: (timetableId: string) => `/api/timetables/${timetableId}`,
   },
 } as const;
 
