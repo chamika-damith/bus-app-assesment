@@ -61,7 +61,9 @@ bun run start
 ```
 ├── app/                    # App screens and routing
 │   ├── auth/              # Authentication flow
-│   │   ├── role-selection.tsx
+│   │   ├── simple.tsx     # Get started screen
+│   │   ├── login.tsx      # Login screen
+│   │   ├── register.tsx   # Registration screen
 │   │   ├── ui-preference.tsx
 │   │   └── route-selection.tsx
 │   ├── driver/            # Driver dashboard screens

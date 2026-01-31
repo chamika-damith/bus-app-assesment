@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { Platform, View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 
 // Platform-specific imports
 let MapView: any;
 let Marker: any;
+let Polyline: any;
 let PROVIDER_GOOGLE: any;
 
 if (Platform.OS !== 'web') {
@@ -12,12 +13,19 @@ if (Platform.OS !== 'web') {
   const maps = require('react-native-maps');
   MapView = maps.default;
   Marker = maps.Marker;
+  Polyline = maps.Polyline;
   PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
 }
 
 interface MapViewProps {
   style?: any;
-  initialRegion: {
+  initialRegion?: {
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  };
+  region?: {
     latitude: number;
     longitude: number;
     latitudeDelta: number;
@@ -26,6 +34,10 @@ interface MapViewProps {
   showsUserLocation?: boolean;
   showsMyLocationButton?: boolean;
   followsUserLocation?: boolean;
+  provider?: any;
+  mapType?: 'standard' | 'satellite';
+  onPress?: (event: any) => void;
+  onRegionChangeComplete?: (region: any) => void;
   children?: React.ReactNode;
 }
 
@@ -68,18 +80,19 @@ const WebMarker: React.FC<MarkerProps> = ({ coordinate, title, description, pinC
 };
 
 // Export platform-specific components
-export const PlatformMapView: React.FC<MapViewProps> = (props) => {
+export const PlatformMapView = forwardRef<any, MapViewProps>((props, ref) => {
   if (Platform.OS === 'web') {
     return <WebMapView {...props} />;
   }
   
   return (
     <MapView
+      ref={ref}
       provider={PROVIDER_GOOGLE}
       {...props}
     />
   );
-};
+});
 
 export const PlatformMarker: React.FC<MarkerProps> = (props) => {
   if (Platform.OS === 'web') {
@@ -88,6 +101,12 @@ export const PlatformMarker: React.FC<MarkerProps> = (props) => {
   
   return <Marker {...props} />;
 };
+
+// Export as default for backward compatibility
+export default PlatformMapView;
+
+// Export the native components and constants for direct use
+export { MapView as NativeMapView, Marker as NativeMarker, PROVIDER_GOOGLE };
 
 const styles = StyleSheet.create({
   webMapContainer: {

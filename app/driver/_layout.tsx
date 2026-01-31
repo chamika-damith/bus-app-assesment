@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, Navigation, Clock, User } from 'lucide-react-native';
+import { Home, Navigation, User, MoreHorizontal } from 'lucide-react-native';
 import { Colors } from '../../constants/colors';
 
 export default function DriverLayout() {
@@ -11,6 +11,13 @@ export default function DriverLayout() {
         tabBarStyle: {
           backgroundColor: Colors.white,
           borderTopColor: Colors.border,
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
         },
         headerShown: false,
       }}
@@ -23,17 +30,10 @@ export default function DriverLayout() {
         }}
       />
       <Tabs.Screen
-        name="rides"
+        name="gps-tracker"
         options={{
-          title: 'Rides',
+          title: 'GPS',
           tabBarIcon: ({ color, size }) => <Navigation size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="earnings"
-        options={{
-          title: 'Earnings',
-          tabBarIcon: ({ color, size }) => <Clock size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -41,6 +41,26 @@ export default function DriverLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+        }}
+      />
+      
+      {/* Hide other screens from tab bar */}
+      <Tabs.Screen
+        name="simple"
+        options={{
+          href: null, // This hides it from the tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="gps-tracker-simple"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="rides"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
