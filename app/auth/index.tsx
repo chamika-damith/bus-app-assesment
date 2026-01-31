@@ -134,7 +134,7 @@ export default function AuthWelcome() {
       // Call loginWithGoogle with the user data
       await loginWithGoogle(googleUserData);
       
-      // On success, navigate to passenger home
+      // On success, navigate to passenger home by default
       router.replace('/passenger');
     } catch (error: any) {
       console.error('Google Sign-In error:', error);

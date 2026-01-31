@@ -11,13 +11,8 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MapPin, Layers, ZoomIn, ZoomOut, Navigation, LocateIcon, Bus, Wifi, WifiOff } from 'lucide-react-native';
-import MapView, { 
-  Marker, 
-  PROVIDER_GOOGLE, 
-  Region, 
-  MapPressEvent, 
-  Polyline
-} from '../../components/MapView';
+import { PlatformMapView as MapView, PlatformMarker as Marker, PROVIDER_GOOGLE } from '../../components/MapView';
+import { Region, MapPressEvent, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';

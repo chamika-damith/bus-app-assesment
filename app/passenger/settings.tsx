@@ -22,7 +22,14 @@ import {
   LogOut,
   ChevronRight,
   Moon,
-  Sun
+  Sun,
+  Bus,
+  Navigation,
+  Heart,
+  Route,
+  Users,
+  AlertTriangle,
+  Clock
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Colors } from '../../constants/colors';
@@ -39,7 +46,7 @@ interface SettingItem {
   action?: () => void;
 }
 
-export default function Settings() {
+export default function MoreScreen() {
   const { user, logout, updateUser } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -90,6 +97,67 @@ export default function Settings() {
   };
 
   const settingsGroups = [
+    {
+      title: 'Features',
+      items: [
+        {
+          id: 'active_buses',
+          title: 'Active Buses',
+          subtitle: 'View all live buses',
+          icon: <Bus size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/active-buses'
+        },
+        {
+          id: 'nearby_buses',
+          title: 'Nearby Buses',
+          subtitle: 'Find buses near your location',
+          icon: <Navigation size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/nearby-buses'
+        },
+        {
+          id: 'saved_places',
+          title: 'Saved Places',
+          subtitle: 'Manage your favorite locations',
+          icon: <Heart size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/saved-places'
+        },
+        {
+          id: 'route_details',
+          title: 'Route Details',
+          subtitle: 'Explore bus routes and schedules',
+          icon: <Route size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/route-details'
+        },
+        {
+          id: 'bus_tracking',
+          title: 'Bus Tracking',
+          subtitle: 'Track specific buses in real-time',
+          icon: <Clock size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/bus-tracking'
+        },
+        {
+          id: 'crowd_report',
+          title: 'Crowd Report',
+          subtitle: 'Report and view bus crowding',
+          icon: <Users size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/crowd-report'
+        },
+        {
+          id: 'off_route_guidance',
+          title: 'Off-Route Guidance',
+          subtitle: 'Get help when buses are off-route',
+          icon: <AlertTriangle size={20} color={Colors.primary} />,
+          type: 'navigation' as const,
+          route: '/passenger/off-route-guidance'
+        }
+      ]
+    },
     {
       title: 'Profile',
       items: [
@@ -172,14 +240,6 @@ export default function Settings() {
           type: 'toggle' as const,
           value: notificationsEnabled,
           action: () => setNotificationsEnabled(!notificationsEnabled)
-        },
-        {
-          id: 'saved_places',
-          title: 'Saved Places',
-          subtitle: 'Manage your favorite locations',
-          icon: <MapPin size={20} color={Colors.text.secondary} />,
-          type: 'navigation' as const,
-          route: '/passenger/saved-places'
         },
         {
           id: 'units',
@@ -355,7 +415,8 @@ export default function Settings() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Settings</Text>
+          <Text style={styles.headerTitle}>More</Text>
+          <Text style={styles.headerSubtitle}>Features and Settings</Text>
         </View>
 
         {settingsGroups.map((group, index) => (
@@ -390,6 +451,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 4,
   },
   settingGroup: {
     marginTop: 24,

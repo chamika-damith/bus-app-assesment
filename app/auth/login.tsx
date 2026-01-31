@@ -28,7 +28,8 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/');
+      // Navigate to passenger section by default after login
+      router.replace('/passenger');
     } catch (error) {
       Alert.alert('Error', 'Invalid credentials');
     } finally {

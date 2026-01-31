@@ -1,21 +1,40 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential } from 'firebase/auth';
+import { initializeAuth, getAuth, getReactNativePersistence, GoogleAuthProvider, signInWithPopup, signInWithCredential } from 'firebase/auth';
 import { Platform } from 'react-native';
-
-// Firebase configuration for TransLink
-const firebaseConfig = {
-  apiKey: "AIzaSyBiUPcQoOzKUXtRCJRwtdYprsxcjIf_0R8",
-  authDomain: "translink-dbf1d.firebaseapp.com",
-  projectId: "translink-dbf1d",
-  storageBucket: "translink-dbf1d.firebasestorage.app",
-  messagingSenderId: "937911629962",
-  appId: "1:937911629962:web:b6f7c7868d966c6321d573",
-  measurementId: "G-62DG6BRS2F"
-};
+import { ENV_CONFIG } from '../config/environment';
 
 // Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+const app = getApps().length === 0 ? initializeApp(ENV_CONFIG.FIREBASE_CONFIG) : getApp();
+
+// Initialize Auth with AsyncStorage persistence
+let auth;
+try {
+  // Import AsyncStorage dynamically to avoid issues
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  
+  // Check if auth is already initialized
+  const existingApps = getApps();
+  if (existingApps.length > 0) {
+    try {
+      auth = getAuth(app);
+    } catch (error) {
+      // If getAuth fails, initialize with persistence
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage)
+      });
+    }
+  } else {
+    // Initialize auth with AsyncStorage persistence
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+  }
+} catch (error) {
+  console.warn('Firebase Auth persistence setup failed, using default:', error);
+  // Fallback to default auth without persistence
+  auth = getAuth(app);
+}
+
 const googleProvider = new GoogleAuthProvider();
 
 // Configure Google Provider

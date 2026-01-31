@@ -297,27 +297,12 @@
             {
               "action": "sign_in_with_google",
               "button_text": "Sign in with Google",
-              "on_success": "/role-selection",
+              "on_success": "/passenger",
               "on_failure": "show_error_retry"
             }
           ],
           "language_options": ["Sinhala", "Tamil", "English"]
         },
-        {
-          "screen_id": "AUTH_003",
-          "screen_name": "Role Selection",
-          "route": "/role-selection",
-          "first_time_only": true,
-          "features": [
-            "Role selection cards",
-            "Brief description for each role",
-            "Continue button"
-          ],
-          "roles": [
-            {
-              "role_id": "DRIVER",
-              "role_name": "Bus Driver",
-              "icon": "bus",
               "description": "I drive a bus",
               "next_screen": "/driver/route-selection"
             },

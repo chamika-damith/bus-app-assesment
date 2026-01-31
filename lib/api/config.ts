@@ -1,3 +1,5 @@
+import { ENV_CONFIG } from '../config/environment';
+
 // ==================== API CONFIGURATION ====================
 
 /**
@@ -6,7 +8,7 @@
  */
 export const API_CONFIG = {
   // Base URL for the API
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'https://bustracking-backend-ehnq.onrender.com/api',
+  BASE_URL: ENV_CONFIG.API_URL,
   
   // Request timeout in milliseconds
   TIMEOUT: 15000, // 15 seconds
